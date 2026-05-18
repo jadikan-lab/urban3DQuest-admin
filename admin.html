@@ -26,18 +26,8 @@
       --mono:'JetBrains Mono',ui-monospace,monospace;
       --radius-sm:8px;--radius:14px;--radius-lg:22px;
     }
-    body.env-stg{
-      --bg:#120c08;
-      --bg-2:#1a120d;
-      --surface:#221611;
-      --surface-2:#2b1d16;
-      --line:rgba(255,237,213,0.12);
-      --line-2:rgba(255,237,213,0.24);
-      --ink-3:#c2a891;
-    }
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:var(--display);background:var(--bg);color:var(--ink);min-height:100vh;-webkit-font-smoothing:antialiased}
-    body.env-stg{background:radial-gradient(circle at top,#3a2218 0%,var(--bg) 38%)}
     header{background:var(--surface);padding:12px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:100;border-bottom:1px solid var(--line-2);flex-wrap:wrap}
     header h1{font-size:1rem;flex:1;min-width:180px}
     .dot{width:10px;height:10px;border-radius:50%;background:var(--ink-3);flex-shrink:0}
@@ -463,7 +453,6 @@ function buildGameUrlPrint(param,value){return GAME_BASE_URL+'/?'+param+'='+valu
 var ADMIN_UI_VERSION='v3.9.8';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 var currentLoc=null,currentType='fixed',visVisible=true,gameActive=true,modeMap=true,modeCompass=true,photoDataUrls=[],adminMap=null,mapLayers=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
-if(SUPABASE_ENV.name==='stg')document.body.classList.add('env-stg');
 var _adminTitle=document.getElementById('adminTitle');
 if(_adminTitle)_adminTitle.textContent='Urban3DQuest Admin · '+ADMIN_UI_VERSION+' · '+SUPABASE_ENV.label;
 var _envChip=document.getElementById('envChip');
