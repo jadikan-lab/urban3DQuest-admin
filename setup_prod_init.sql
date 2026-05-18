@@ -14,6 +14,7 @@ create table if not exists treasures (
   lat          double precision not null,
   lng          double precision not null,
   placed_at    timestamptz default now(),
+  activated_at timestamptz,
   label        text default '',
   hint         text default '',
   visible      boolean default true,
