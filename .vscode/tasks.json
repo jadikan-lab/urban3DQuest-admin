@@ -1,0 +1,25 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Admin: verify sync from game",
+      "type": "shell",
+      "command": "node",
+      "args": ["scripts/sync-admin-from-game.mjs", "--check"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Admin: sync from game",
+      "type": "shell",
+      "command": "node",
+      "args": ["scripts/sync-admin-from-game.mjs"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

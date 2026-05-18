@@ -10,6 +10,9 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
     /* ── DESIGN SYSTEM — Jadikan light painting ── */
+    /* Tokens partagés ci-dessous (accents, typo, radius, glow) :
+       SOURCE DE VÉRITÉ → urban3DQuest/css/design-tokens.css
+       Mettre à jour là-bas EN PREMIER, puis répercuter ici. */
     :root{
       --magenta:#ff3d8a;--cyan:#00e5ff;--amber:#ffb020;--violet:#a855f7;
       --bg:#050610;--bg-2:#0a0c1a;--surface:#0f1124;--surface-2:#161830;
@@ -118,6 +121,12 @@
     .qr-card{background:var(--surface);border-radius:10px;padding:12px;text-align:center}
     .qr-card-id{font-size:0.72rem;font-weight:700;margin-bottom:6px;color:var(--cyan);letter-spacing:.04em;font-family:var(--mono)}
     .qr-card canvas,.qr-card img{width:150px!important;height:150px!important}
+    .env-qr-row{display:flex;gap:24px;justify-content:center;flex-wrap:wrap}
+    .env-qr-item{min-width:0;flex:1 1 140px;max-width:180px}
+    @media (max-width: 540px){
+      .env-qr-row{gap:14px}
+      .env-qr-item{flex-basis:100%;max-width:none}
+    }
     /* ── Print sheet (hidden on screen) ── */
     #printSheet{display:none}
     @media print{
@@ -310,13 +319,13 @@
   <div style="background:#1a0d2e;border:1px solid #7c3aed;border-radius:12px;padding:14px;margin-bottom:18px">
     <div style="font-weight:700;color:#c4b5fd;font-size:0.9rem;margin-bottom:6px">🔗 Accès rapide — Ouvrir le jeu sur mobile</div>
     <p style="font-size:0.75rem;color:#94a3b8;margin-bottom:12px">Scanne le QR avec ton téléphone pour ouvrir le jeu dans l'environnement voulu. Le localStorage du téléphone sera mis à jour automatiquement.</p>
-    <div style="display:flex;gap:100px;justify-content:center">
-      <div style="text-align:center">
+    <div class="env-qr-row">
+      <div class="env-qr-item" style="text-align:center">
         <div style="font-size:0.72rem;font-weight:700;color:#f97316;margin-bottom:6px;letter-spacing:.05em">STG · PRÉPROD</div>
         <div id="envQrStg" style="background:#fff;padding:8px;border-radius:8px;display:inline-block"></div>
         <div style="font-size:0.65rem;color:#64748b;margin-top:4px">?env=stg</div>
       </div>
-      <div style="text-align:center">
+      <div class="env-qr-item" style="text-align:center">
         <div style="font-size:0.72rem;font-weight:700;color:#4ade80;margin-bottom:6px;letter-spacing:.05em">PROD</div>
         <div id="envQrProd" style="background:#fff;padding:8px;border-radius:8px;display:inline-block"></div>
         <div style="font-size:0.65rem;color:#64748b;margin-top:4px">?env=prod</div>
@@ -412,18 +421,20 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
+// <SYNC:SUPABASE_ENVS_START>
 var SUPABASE_ENVS={
-  prod:{
-    label:'PROD',
-    url:'https://jocfvobqfpygixrawnbq.supabase.co',
-    key:'sb_publishable_M8SxhXrmh17vrOf1WlOM6Q_ZNKNqQhM'
+  prod: {
+    label: 'PROD',
+    url: 'https://jocfvobqfpygixrawnbq.supabase.co',
+    key: 'sb_publishable_M8SxhXrmh17vrOf1WlOM6Q_ZNKNqQhM'
   },
-  stg:{
-    label:'STG',
-    url:'https://uuofsgcwznuwcsaqsmzc.supabase.co',
-    key:'sb_publishable_LzvsvuvfbJvIL8eynQIC4A_dbJ9A2CF'
+  stg: {
+    label: 'STG',
+    url: 'https://uuofsgcwznuwcsaqsmzc.supabase.co',
+    key: 'sb_publishable_LzvsvuvfbJvIL8eynQIC4A_dbJ9A2CF'
   }
 };
+// <SYNC:SUPABASE_ENVS_END>
 function resolveSupabaseEnv(){
   var params=new URLSearchParams(location.search);
   var requestedEnv=(params.get('env')||localStorage.getItem('u3dq_env')||'prod').toLowerCase();
@@ -444,7 +455,9 @@ var SUPABASE_ENV=resolveSupabaseEnv();
 var SUPABASE_URL=SUPABASE_ENV.url;
 var SUPABASE_KEY=SUPABASE_ENV.key;
 var GAME_BASE_URL='https://jadikan-lab.github.io/urban3DQuest';
-var GAME_WEB_VERSION='21a5a4a'; // cache-busting for mobile scans
+// <SYNC:GAME_WEB_VERSION_START>
+var GAME_WEB_VERSION='86b5252'; // cache-busting for mobile scans — synced from urban3DQuest HEAD
+// <SYNC:GAME_WEB_VERSION_END>
 function buildGameUrl(param,value){return GAME_BASE_URL+'/?'+param+'='+value+'&v='+GAME_WEB_VERSION;}
 function buildGameUrlPrint(param,value){return GAME_BASE_URL+'/?'+param+'='+value;}
 var ADMIN_UI_VERSION='v3.9.8';
