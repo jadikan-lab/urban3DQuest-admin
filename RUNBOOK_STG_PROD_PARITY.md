@@ -2,6 +2,11 @@
 
 Goal: keep STG and PROD schema equivalent for Urban3DQuest.
 
+## Repository scope
+- Code repositories in use: `urban3DQuest` (game) and `urban3DQuest-admin` (admin).
+- There is no separate staging code repository.
+- STG is a Supabase environment only.
+
 ## Why drift happens
 - STG and PROD are two distinct Supabase projects.
 - SQL changes are not auto-applied across environments.
@@ -9,10 +14,9 @@ Goal: keep STG and PROD schema equivalent for Urban3DQuest.
 
 ## Mandatory workflow (every schema change)
 1. Add a migration file in this repository.
-2. Apply it on STG first.
-3. Validate game + admin behavior on STG.
-4. Apply the same migration on PROD.
-5. Re-check parity with the SQL checks below.
+2. Until launch phase: apply and validate on PROD first.
+3. After launch phase: copy/sync current PROD state to STG, then iterate on STG before promoting to PROD.
+4. Re-check parity with the SQL checks below.
 
 ## Minimal fix for current drift (activated_at)
 Run in SQL Editor on STG, then PROD:

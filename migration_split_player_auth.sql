@@ -13,6 +13,22 @@ alter table public.player_auth enable row level security;
 
 revoke all on public.player_auth from anon, authenticated, public;
 
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.admin_users a
+    where a.user_id = auth.uid()
+  );
+$$;
+
+grant execute on function public.is_admin() to anon, authenticated;
+
 insert into public.player_auth (pseudo, password_hash, session_token)
 select pseudo,
        coalesce(password_hash, ''),
@@ -22,12 +38,32 @@ on conflict (pseudo) do update
 set password_hash = excluded.password_hash,
     session_token = excluded.session_token;
 
-drop policy if exists players_read_all on public.players;
-drop policy if exists players_update_self on public.players;
+alter table public.players enable row level security;
 
-revoke all on public.players from anon, authenticated, public;
-grant select (pseudo, joined_at, score, found_count) on public.players to anon, authenticated;
-grant insert (pseudo, joined_at, score, found_count) on public.players to anon, authenticated;
+drop policy if exists players_read_all on public.players;
+drop policy if exists players_insert_self on public.players;
+drop policy if exists players_update_self on public.players;
+drop policy if exists players_admin_all on public.players;
+
+create policy players_read_all on public.players
+for select to anon, authenticated
+using (true);
+
+create policy players_insert_self on public.players
+for insert to anon, authenticated
+with check (
+  pseudo is not null
+  and length(trim(pseudo)) between 2 and 24
+  and pseudo ~ '^[A-Z0-9_-]+$'
+);
+
+create policy players_admin_all on public.players
+for all to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+grant select, insert on public.players to anon, authenticated;
+grant update, delete on public.players to authenticated;
 
 alter table public.players
   alter column score set default 0,
