@@ -453,7 +453,7 @@ var GAME_WEB_VERSION='a852a91'; // cache-busting for mobile scans — synced fro
 // <SYNC:GAME_WEB_VERSION_END>
 function buildGameUrl(param,value){return GAME_BASE_URL+'/?'+param+'='+value+'&v='+GAME_WEB_VERSION;}
 function buildGameUrlPrint(param,value){return GAME_BASE_URL+'/?'+param+'='+value;}
-var ADMIN_UI_VERSION='v3.9.8';
+var ADMIN_UI_VERSION='v3.9.9';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 var currentLoc=null,currentType='fixed',visVisible=true,gameActive=true,modeMap=true,modeCompass=true,photoDataUrls=[],adminMap=null,mapLayers=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
 var _adminTitle=document.getElementById('adminTitle');
@@ -467,6 +467,21 @@ if(_envStgBtn&&SUPABASE_ENV.name==='stg')_envStgBtn.classList.add('active');
 function escHtml(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function safeImgUrl(v){var s=String(v||'').trim();if(!s)return'';if(/^(https?:|data:image\/)/i.test(s))return s;return'';}
 function csvCell(v){var s=String(v??'');if(/^[=+\-@]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';}
+async function uploadPhotoDataUrl(dataUrl,scope){
+  try{
+    var blob=await(await fetch(dataUrl)).blob();
+    var uid=(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));
+    var folder='admin_'+SUPABASE_ENV.name+'/'+(scope||'treasure');
+    var objectPath=folder+'/'+uid+'.jpg';
+    var upRes=await db.storage.from('photos').upload(objectPath,blob,{contentType:'image/jpeg',upsert:false});
+    if(upRes.error)return dataUrl;
+    var pubRes=db.storage.from('photos').getPublicUrl(objectPath);
+    var publicUrl=pubRes&&pubRes.data&&pubRes.data.publicUrl?pubRes.data.publicUrl:'';
+    return publicUrl||dataUrl;
+  }catch(e){
+    return dataUrl;
+  }
+}
 async function checkPw(){
   var email=document.getElementById('emailInput').value.trim();
   var pw=document.getElementById('pwInput').value;
@@ -518,7 +533,7 @@ function renderPhotoStrip(){var s=document.getElementById('photoStrip');s.innerH
 function getPhotoUrls(raw){if(!raw)return[];if(raw.charAt(0)==='['){try{return JSON.parse(raw).filter(Boolean);}catch(e){}}return[raw];}
 function setType(t){currentType=t;document.getElementById('typeFixed').classList.toggle('active',t==='fixed');document.getElementById('typeUnique').classList.toggle('active',t==='unique');if(t==='unique'){visVisible=false;document.getElementById('visToggle').classList.remove('on');document.getElementById('visLabel').textContent='Brouillon Flash caché jusqu\'à validation';}else{document.getElementById('visLabel').textContent=visVisible?'Visible par les joueurs':'Masque aux joueurs';}}
 function toggleVis(){visVisible=!visVisible;document.getElementById('visToggle').classList.toggle('on',visVisible);document.getElementById('visLabel').textContent=visVisible?'Visible par les joueurs':'Masque aux joueurs';}
-async function saveTreasure(){var btn=document.getElementById('saveBtn');var st=document.getElementById('stAdd');if(!currentLoc){showStatus(st,'err','GPS requis');return;}var label=document.getElementById('fLabel').value.trim()||(currentType==='fixed'?'Balise fixe':'Trésor unique');var hint=document.getElementById('fHint').value.trim();var qrSel=document.getElementById('fQrSelect');var qrNum=(qrSel.value&&qrSel.value!=='__manual__')?qrSel.value:document.getElementById('fQrNum').value.trim().toUpperCase().replace(/[^A-Z0-9\-]/g,'');btn.disabled=true;btn.textContent='Enregistrement...';var id=qrNum?qrNum:(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));var uploadedUrls=[];for(var pi=0;pi<photoDataUrls.length;pi++){var dataUrl=photoDataUrls[pi];var stored='';try{var blob=await(await fetch(dataUrl)).blob();var fd=new FormData();fd.append('file',blob);fd.append('upload_preset','Urban3DQuest');var cRes=await(await fetch('https://api.cloudinary.com/v1_1/djgwyfabo/image/upload',{method:'POST',body:fd})).json();if(cRes.secure_url)stored=cRes.secure_url;}catch(e){}uploadedUrls.push(stored||dataUrl);}var photoUrl=uploadedUrls.length===0?'':(uploadedUrls.length===1?uploadedUrls[0]:JSON.stringify(uploadedUrls));var initialVisible=currentType==='unique'?false:visVisible;var res=await db.from('treasures').insert({id:id,type:currentType,lat:currentLoc.lat,lng:currentLoc.lng,placed_at:new Date().toISOString(),activated_at:null,label:label,hint:hint,visible:initialVisible,photo_url:photoUrl,found_by:''});
+async function saveTreasure(){var btn=document.getElementById('saveBtn');var st=document.getElementById('stAdd');if(!currentLoc){showStatus(st,'err','GPS requis');return;}var label=document.getElementById('fLabel').value.trim()||(currentType==='fixed'?'Balise fixe':'Trésor unique');var hint=document.getElementById('fHint').value.trim();var qrSel=document.getElementById('fQrSelect');var qrNum=(qrSel.value&&qrSel.value!=='__manual__')?qrSel.value:document.getElementById('fQrNum').value.trim().toUpperCase().replace(/[^A-Z0-9\-]/g,'');btn.disabled=true;btn.textContent='Enregistrement...';var id=qrNum?qrNum:(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));var uploadedUrls=[];for(var pi=0;pi<photoDataUrls.length;pi++){var dataUrl=photoDataUrls[pi];var stored=await uploadPhotoDataUrl(dataUrl,'treasure');uploadedUrls.push(stored||dataUrl);}var photoUrl=uploadedUrls.length===0?'':(uploadedUrls.length===1?uploadedUrls[0]:JSON.stringify(uploadedUrls));var initialVisible=currentType==='unique'?false:visVisible;var res=await db.from('treasures').insert({id:id,type:currentType,lat:currentLoc.lat,lng:currentLoc.lng,placed_at:new Date().toISOString(),activated_at:null,label:label,hint:hint,visible:initialVisible,photo_url:photoUrl,found_by:''});
   // quest dans un update séparé pour éviter l'erreur cache PostgREST "column not found"
   var questVal=document.getElementById('fQuestSelect').value||'';
   if(!res.error&&questVal){await db.from('treasures').update({quest:questVal}).eq('id',id);}
@@ -1192,7 +1207,7 @@ function onQrQuestChange(){
   prefixEl.value=sug||'QR';
 }
 async function restoreQrGrid(){
-  renderEnvQRCodes();var ids=JSON.parse(localStorage.getItem('u3dq_qr_generated')||'[]');var meta=JSON.parse(localStorage.getItem('u3dq_qr_meta')||'{}');var grid=document.getElementById('qrGrid');grid.innerHTML='';if(!ids.length){document.getElementById('qrInfo').style.display='none';document.getElementById('zipPngBtn').disabled=true;return;}var res=await db.from('treasures').select('id,found_by');var tMap={};(res.data||[]).forEach(function(t){tMap[t.id]=t.found_by;});ids.forEach(function(id){var sid='qrs_r_'+id.replace(/[^a-z0-9]/gi,'_');var placed=id in tMap;var found=placed&&tMap[id]&&tMap[id].length>0;var borderColor=found?'#f97316':placed?'#4ade80':'transparent';var labelColor=found?'#f97316':placed?'#4ade80':'#93c5fd';var badge=found?' 🎯':placed?' ✓':'';var m=meta[id]||{};var qBadge=m.quest?'<span style="background:#1c3351;color:#7dd3fc;font-size:0.6rem;font-weight:600;padding:1px 5px;border-radius:6px;margin-left:3px">'+m.quest+'</span>':'';var oBadge=m.objet?'<div style="font-size:0.62rem;color:#94a3b8;margin-top:2px">&#128230; '+m.objet+'</div>':'';var card=document.createElement('div');card.className='qr-card';card.id='qrc_'+id.replace(/[^a-z0-9]/gi,'_');card.style.opacity=found?'0.35':placed?'0.55':'1';card.style.border='2px solid '+borderColor;card.style.borderRadius='10px';card.style.position='relative';card.innerHTML='<div class="qr-card-id" style="color:'+labelColor+'">'+id+badge+qBadge+'</div>'+oBadge+'<div style="background:#ffffff;padding:8px;border-radius:8px;display:inline-block"><div id="'+sid+'"></div></div>'+'<button onclick="editQrMeta(\''+id+'\')" style="margin-top:4px;width:100%;padding:3px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#94a3b8;font-size:0.65rem;cursor:pointer">&#9999;&#65039; Modifier</button>';grid.appendChild(card);var url=buildGameUrl('found',id);new QRCode(document.getElementById(sid),{text:url,width:150,height:150,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.L});});var total=ids.length;var placedCount=ids.filter(function(id){return id in tMap;}).length;var foundCount=ids.filter(function(id){return tMap[id]&&tMap[id].length>0;}).length;var info=document.getElementById('qrInfo');info.innerHTML=total+' codes — <span style="color:#4ade80">'+placedCount+' posés ✓</span>, <span style="color:#f97316">'+foundCount+' trouvés 🎯</span>, '+(total-placedCount)+' disponibles';info.style.display='block';document.getElementById('zipPngBtn').disabled=false;}
+  renderEnvQRCodes();var ids=JSON.parse(localStorage.getItem('u3dq_qr_generated')||'[]');var meta=JSON.parse(localStorage.getItem('u3dq_qr_meta')||'{}');var grid=document.getElementById('qrGrid');grid.innerHTML='';if(!ids.length){document.getElementById('qrInfo').style.display='none';document.getElementById('zipPngBtn').disabled=true;return;}var res=await db.from('treasures').select('id,found_by');var tMap={};(res.data||[]).forEach(function(t){tMap[t.id]=t.found_by;});ids.forEach(function(id){var sid='qrs_r_'+id.replace(/[^a-z0-9]/gi,'_');var placed=id in tMap;var found=placed&&tMap[id]&&tMap[id].length>0;var borderColor=found?'#f97316':placed?'#4ade80':'transparent';var labelColor=found?'#f97316':placed?'#4ade80':'#93c5fd';var badge=found?' 🎯':placed?' ✓':'';var m=meta[id]||{};var qBadge=m.quest?'<span style="background:#1c3351;color:#7dd3fc;font-size:0.6rem;font-weight:600;padding:1px 5px;border-radius:6px;margin-left:3px">'+m.quest+'</span>':'';var oBadge=m.objet?'<div style="font-size:0.62rem;color:#94a3b8;margin-top:2px">&#128230; '+m.objet+'</div>':'';var card=document.createElement('div');card.className='qr-card';card.id='qrc_'+id.replace(/[^a-z0-9]/gi,'_');card.style.opacity=found?'0.35':placed?'0.55':'1';card.style.border='2px solid '+borderColor;card.style.borderRadius='10px';card.style.position='relative';card.innerHTML='<div class="qr-card-id" style="color:'+labelColor+';font-size:1.08rem;line-height:1.05">'+id+badge+qBadge+'</div><div style="font-size:0.64rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#94a3b8;margin-top:2px">JADIKAN</div>'+oBadge+'<div style="background:#ffffff;padding:8px;border-radius:8px;display:inline-block"><div id="'+sid+'"></div></div>'+'<button onclick="editQrMeta(\''+id+'\')" style="margin-top:4px;width:100%;padding:3px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#94a3b8;font-size:0.65rem;cursor:pointer">&#9999;&#65039; Modifier</button>';grid.appendChild(card);var url=buildGameUrl('found',id);new QRCode(document.getElementById(sid),{text:url,width:150,height:150,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.L});});var total=ids.length;var placedCount=ids.filter(function(id){return id in tMap;}).length;var foundCount=ids.filter(function(id){return tMap[id]&&tMap[id].length>0;}).length;var info=document.getElementById('qrInfo');info.innerHTML=total+' codes — <span style="color:#4ade80">'+placedCount+' posés ✓</span>, <span style="color:#f97316">'+foundCount+' trouvés 🎯</span>, '+(total-placedCount)+' disponibles';info.style.display='block';document.getElementById('zipPngBtn').disabled=false;}
 function qrGenericDisplayCode(id){
   var m=String(id||'').match(/-(\d+)$/);
   if(m&&m[1])return m[1];
@@ -1279,10 +1294,7 @@ async function onPhotoChangeSelected(evt){
     };
     reader.readAsDataURL(file);
   });
-  var blob=await(await fetch(dataUrl)).blob();
-  var fd=new FormData();fd.append('file',blob);fd.append('upload_preset','Urban3DQuest');
-  var cRes=await(await fetch('https://api.cloudinary.com/v1_1/djgwyfabo/image/upload',{method:'POST',body:fd})).json();
-  var photoUrl=cRes.secure_url||dataUrl;
+  var photoUrl=await uploadPhotoDataUrl(dataUrl,'treasure');
   var res=await db.from('treasures').update({photo_url:photoUrl}).eq('id',id);
   if(btn){
     btn.disabled=false;
