@@ -436,9 +436,8 @@ var SUPABASE_ENVS={
 // <SYNC:SUPABASE_ENVS_END>
 function resolveSupabaseEnv(){
   var params=new URLSearchParams(location.search);
-  var requestedEnv=(params.get('env')||localStorage.getItem('u3dq_env')||'prod').toLowerCase();
+  var requestedEnv=(params.get('env')||'prod').toLowerCase();
   var activeEnv=SUPABASE_ENVS[requestedEnv]?requestedEnv:'prod';
-  if(params.get('env'))localStorage.setItem('u3dq_env',activeEnv);
   var config=SUPABASE_ENVS[activeEnv];
   if(!config.key)throw new Error('Clé Supabase manquante pour l\'environnement '+config.label+'. Renseigne SUPABASE_ENVS.'+activeEnv+'.key.');
   return Object.assign({name:activeEnv},config);
