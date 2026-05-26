@@ -484,12 +484,12 @@ async function uploadPhotoDataUrl(dataUrl,scope){
     var folder='admin_'+SUPABASE_ENV.name+'/'+(scope||'treasure');
     var objectPath=folder+'/'+uid+'.jpg';
     var upRes=await db.storage.from('photos').upload(objectPath,blob,{contentType:'image/jpeg',upsert:false});
-    if(upRes.error)return dataUrl;
+    if(upRes.error)return null;
     var pubRes=db.storage.from('photos').getPublicUrl(objectPath);
     var publicUrl=pubRes&&pubRes.data&&pubRes.data.publicUrl?pubRes.data.publicUrl:'';
-    return publicUrl||dataUrl;
+    return publicUrl||null;
   }catch(e){
-    return dataUrl;
+    return null;
   }
 }
 function formatAuthErrorMessage(err){
@@ -563,7 +563,7 @@ function renderPhotoStrip(){var s=document.getElementById('photoStrip');s.innerH
 function getPhotoUrls(raw){if(!raw)return[];if(raw.charAt(0)==='['){try{return JSON.parse(raw).filter(Boolean);}catch(e){}}return[raw];}
 function setType(t){currentType=t;document.getElementById('typeFixed').classList.toggle('active',t==='fixed');document.getElementById('typeUnique').classList.toggle('active',t==='unique');if(t==='unique'){visVisible=false;document.getElementById('visToggle').classList.remove('on');document.getElementById('visLabel').textContent='Brouillon Flash caché jusqu\'à validation';}else{document.getElementById('visLabel').textContent=visVisible?'Visible par les joueurs':'Masque aux joueurs';}}
 function toggleVis(){visVisible=!visVisible;document.getElementById('visToggle').classList.toggle('on',visVisible);document.getElementById('visLabel').textContent=visVisible?'Visible par les joueurs':'Masque aux joueurs';}
-async function saveTreasure(){var btn=document.getElementById('saveBtn');var st=document.getElementById('stAdd');if(!currentLoc){showStatus(st,'err','GPS requis');return;}var label=document.getElementById('fLabel').value.trim()||(currentType==='fixed'?'Balise fixe':'Trésor unique');var hint=document.getElementById('fHint').value.trim();var qrSel=document.getElementById('fQrSelect');var qrNum=(qrSel.value&&qrSel.value!=='__manual__')?qrSel.value:document.getElementById('fQrNum').value.trim().toUpperCase().replace(/[^A-Z0-9\-]/g,'');btn.disabled=true;btn.textContent='Enregistrement...';var id=qrNum?qrNum:(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));var uploadedUrls=[];for(var pi=0;pi<photoDataUrls.length;pi++){var dataUrl=photoDataUrls[pi];var stored=await uploadPhotoDataUrl(dataUrl,'treasure');uploadedUrls.push(stored||dataUrl);}var photoUrl=uploadedUrls.length===0?'':(uploadedUrls.length===1?uploadedUrls[0]:JSON.stringify(uploadedUrls));var initialVisible=currentType==='unique'?false:visVisible;var res=await db.from('treasures').insert({id:id,type:currentType,lat:currentLoc.lat,lng:currentLoc.lng,placed_at:new Date().toISOString(),activated_at:null,label:label,hint:hint,visible:initialVisible,photo_url:photoUrl,found_by:''});
+async function saveTreasure(){var btn=document.getElementById('saveBtn');var st=document.getElementById('stAdd');if(!currentLoc){showStatus(st,'err','GPS requis');return;}var label=document.getElementById('fLabel').value.trim()||(currentType==='fixed'?'Balise fixe':'Trésor unique');var hint=document.getElementById('fHint').value.trim();var qrSel=document.getElementById('fQrSelect');var qrNum=(qrSel.value&&qrSel.value!=='__manual__')?qrSel.value:document.getElementById('fQrNum').value.trim().toUpperCase().replace(/[^A-Z0-9\-]/g,'');btn.disabled=true;btn.textContent='Enregistrement...';var id=qrNum?qrNum:(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));var uploadedUrls=[];for(var pi=0;pi<photoDataUrls.length;pi++){var dataUrl=photoDataUrls[pi];var stored=await uploadPhotoDataUrl(dataUrl,'treasure');if(!stored){showStatus(st,'err','❌ Erreur upload photo — vérifie que le bucket "photos" existe dans Supabase '+SUPABASE_ENV.label+'.');btn.disabled=false;btn.textContent='Enregistrer le tresor';return;}uploadedUrls.push(stored);}var photoUrl=uploadedUrls.length===0?'':(uploadedUrls.length===1?uploadedUrls[0]:JSON.stringify(uploadedUrls));var initialVisible=currentType==='unique'?false:visVisible;var res=await db.from('treasures').insert({id:id,type:currentType,lat:currentLoc.lat,lng:currentLoc.lng,placed_at:new Date().toISOString(),activated_at:null,label:label,hint:hint,visible:initialVisible,photo_url:photoUrl,found_by:''});
   // quest dans un update séparé pour éviter l'erreur cache PostgREST "column not found"
   var questVal=document.getElementById('fQuestSelect').value||'';
   if(!res.error&&questVal){await db.from('treasures').update({quest:questVal}).eq('id',id);}
@@ -1325,6 +1325,7 @@ async function onPhotoChangeSelected(evt){
     reader.readAsDataURL(file);
   });
   var photoUrl=await uploadPhotoDataUrl(dataUrl,'treasure');
+  if(!photoUrl){if(btn){btn.disabled=false;btn.textContent='❌ Erreur upload — bucket "photos" manquant';setTimeout(function(){btn.textContent='📷 Changer la photo';},3000);}return;}
   var res=await db.from('treasures').update({photo_url:photoUrl}).eq('id',id);
   if(btn){
     btn.disabled=false;
