@@ -126,7 +126,9 @@
       .print-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:1mm;width:100%}
       .print-cell{display:flex;flex-direction:column;align-items:center;break-inside:avoid;padding:0.3mm 0}
       .print-cell canvas,.print-cell img{width:1.2cm!important;height:1.2cm!important;display:block!important;image-rendering:crisp-edges}
-      .print-label{font-size:4.5pt;font-family:'Courier New',monospace;font-weight:700;color:#000;margin-top:0.4mm;text-align:center;line-height:1;white-space:nowrap}
+      .print-label{margin-top:0.35mm;text-align:center;line-height:1;white-space:nowrap;font-family:'Courier New',monospace;color:#000}
+      .print-label-code{font-size:5.8pt;font-weight:800;letter-spacing:0.02em}
+      .print-label-brand{font-size:3.2pt;font-weight:700;text-transform:lowercase;margin-top:0.1mm;opacity:0.95}
     }
   </style>
 </head>
@@ -1128,7 +1130,7 @@ async function generateQRCodes(){
     new QRCode(document.getElementById(sid),{text:url,width:150,height:150,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.L});
     var cell=document.createElement('div');
     cell.className='print-cell';
-    cell.innerHTML='<div id="'+pid+'"></div><div class="print-label">'+id+'</div>';
+    cell.innerHTML='<div id="'+pid+'"></div><div class="print-label"><div class="print-label-code">'+id+'</div><div class="print-label-brand">jadikan</div></div>';
     printGrid.appendChild(cell);
     new QRCode(document.getElementById(pid),{text:url,width:150,height:150,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.L});
   }
