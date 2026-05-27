@@ -2,6 +2,19 @@
 
 Goal: keep STG and PROD schema equivalent for Urban3DQuest.
 
+## Policy update
+- Version: ENV-POLICY-2026-05-27-v1
+- Effective date: 2026-05-27
+- Decision: work in PROD by default until explicit contrary instruction.
+- STG status: paused.
+- When STG is paused, no schema/code validation is required on STG.
+- Resume rule: STG can be reactivated only with an explicit instruction, recorded with a new policy version/date.
+
+## Current environment status (2026-05-26)
+- Current team observation: STG and PROD may not be differentiated at the Supabase project level.
+- If there is only one active Supabase project, apply each migration once on that project and run verification queries on that same project.
+- If a separate STG project is reintroduced later, this runbook immediately goes back to dual-environment apply and parity checks.
+
 ## Repository scope
 - Code repositories in use: `urban3DQuest` (game) and `urban3DQuest-admin` (admin).
 - There is no separate staging code repository.
@@ -14,9 +27,9 @@ Goal: keep STG and PROD schema equivalent for Urban3DQuest.
 
 ## Mandatory workflow (every schema change)
 1. Add a migration file in this repository.
-2. Until launch phase: apply and validate on PROD first.
-3. After launch phase: copy/sync current PROD state to STG, then iterate on STG before promoting to PROD.
-4. Re-check parity with the SQL checks below.
+2. Apply and validate on PROD.
+3. If STG is explicitly reactivated, sync from PROD first, then run parity checks below.
+4. Re-check parity only when STG is active.
 
 ## Minimal fix for current drift (activated_at)
 Run in SQL Editor on STG, then PROD:

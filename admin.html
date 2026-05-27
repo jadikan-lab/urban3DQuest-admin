@@ -219,6 +219,7 @@
   <select id="filterQuestFixed" onchange="loadTreasureList('fixed','fixedList')" style="margin-bottom:10px;font-size:0.82rem">
     <option value="">Toutes les quêtes</option>
   </select>
+  <p style="font-size:0.72rem;color:#94a3b8;margin:-2px 0 10px">Info: changer la photo ne modifie pas la position GPS du trésor.</p>
   <div id="fixedList"><p class="loading-text">Chargement</p></div>
 </div>
 <div id="panelUnique" class="panel">
@@ -226,6 +227,7 @@
   <select id="filterQuestUnique" onchange="loadTreasureList('unique','uniqueList')" style="margin-bottom:10px;font-size:0.82rem">
     <option value="">Toutes les quêtes</option>
   </select>
+  <p style="font-size:0.72rem;color:#94a3b8;margin:-2px 0 10px">Info: changer la photo ne modifie pas la position GPS du trésor.</p>
   <div id="uniqueList"><p class="loading-text">Chargement</p></div>
 </div>
 <div id="panelPlayers" class="panel">
@@ -584,7 +586,7 @@ async function loadTreasureList(type,elId){var el=document.getElementById(elId);
       +'<div class="t-icon-row">'
       +'<button class="t-ico" title="Modifier nom &amp; indice" onclick="editInline(\''+t.id+'\',\''+sl+'\',\''+sh+'\',\''+type+'\')">✏️</button>'
       +'<button class="t-ico" title="Déplacer sur la carte" onclick="moveOnMap(\''+t.id+'\','+t.lat+','+t.lng+',\''+sl+'\')">📍</button>'
-      +(type==='fixed'?'<button class="t-ico" title="Changer la photo" onclick="changePhoto(\''+t.id+'\')">📷</button>':'')
+      +'<button class="t-ico" title="Changer la photo" onclick="changePhoto(\''+t.id+'\')">📷</button>'
       +'<button class="t-ico" title="Changer la quête" data-tid="'+escHtml(t.id)+'" data-quest="'+escHtml(t.quest||'')+'" onclick="changeQuest(this)">🗂</button>'
       +'<button class="t-ico" id="visBtn_'+t.id+'" title="'+(t.visible?'Masquer':'Afficher')+'" onclick="toggleVis2(\''+t.id+'\','+t.visible+',\''+type+'\')">'+(t.visible?'👁':'🙈')+'</button>'
       +(type==='unique'&&!t.visible?'<button class="t-ico" style="min-width:108px;font-size:0.7rem;font-weight:700" title="Valider le dépôt" onclick="validateDeposit(\''+t.id+'\')">Valider dépôt</button>':'')
@@ -1325,12 +1327,13 @@ async function onPhotoChangeSelected(evt){
     reader.readAsDataURL(file);
   });
   var photoUrl=await uploadPhotoDataUrl(dataUrl,'treasure');
-  if(!photoUrl){if(btn){btn.disabled=false;btn.textContent='❌ Erreur upload — bucket "photos" manquant';setTimeout(function(){btn.textContent='📷 Changer la photo';},3000);}return;}
+  if(!photoUrl){if(btn){btn.disabled=false;btn.textContent='❌';setTimeout(function(){btn.textContent='📷';},3000);}return;}
+  // Keep original placement geolocation: replace only photo_url.
   var res=await db.from('treasures').update({photo_url:photoUrl}).eq('id',id);
   if(btn){
     btn.disabled=false;
     btn.textContent=res.error?'❌ Erreur':'✅ Photo mise à jour';
-    setTimeout(function(){btn.textContent='📷 Changer la photo';},2500);
+    setTimeout(function(){btn.textContent='📷';},2500);
   }
   var card=document.getElementById('lbl_'+id)?.closest('.t-card');
   var firstImg=card?.querySelector('img');
