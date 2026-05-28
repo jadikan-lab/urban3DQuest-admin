@@ -620,12 +620,12 @@ async function onCfgGuideFileChange(evt,kind){
         var img=new Image();
         img.onload=function(){
           var canvas=document.createElement('canvas');
-          var MAX=1200,ratio=Math.min(MAX/img.width,MAX/img.height,1);
+          var MAX=1000,ratio=Math.min(MAX/img.width,MAX/img.height,1);
           canvas.width=img.width*ratio;
           canvas.height=img.height*ratio;
           var ctx=canvas.getContext('2d');
           ctx.drawImage(img,0,0,canvas.width,canvas.height);
-          resolve(canvas.toDataURL('image/jpeg',0.86));
+          resolve(canvas.toDataURL('image/jpeg',0.8));
         };
         img.onerror=function(){reject(new Error('Image invalide'));};
         img.src=e.target.result;
@@ -634,7 +634,8 @@ async function onCfgGuideFileChange(evt,kind){
       reader.readAsDataURL(file);
     });
     var uploaded=await uploadPhotoDataUrl(dataUrl,'config_qr_guide');
-    if(!uploaded){alert('Upload impossible. Vérifie le bucket photos sur '+SUPABASE_ENV.label+'.');return;}
+    if(!uploaded)uploaded=await uploadPhotoDataUrl(dataUrl,'treasure');
+    if(!uploaded){alert('Upload impossible sur '+SUPABASE_ENV.label+'. Vérifie les droits du bucket photos.');return;}
     _setCfgGuidePreview(kind,uploaded);
   }catch(e){
     alert('Erreur image consigne : '+(e&&e.message?e.message:'inconnue'));
