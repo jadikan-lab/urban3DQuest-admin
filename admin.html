@@ -1445,6 +1445,7 @@ async function renderQrBatchHistory(syncedData){
       var remaining=total-usedCount;
       var active=selected&&selected===g.batchId;
       var opened=visible&&visible===g.batchId;
+      var batchEsc=String(g.batchId).replace(/'/g,"\\'");
       var label=(g.batchId==='legacy')?'Lot legacy (sans batchId)':('Lot '+g.batchId);
       return '<div style="border:1px solid '+(active?'#60a5fa':'#23314b')+';background:'+(active?'rgba(59,130,246,.12)':'#0f172a')+';border-radius:9px;padding:8px;margin-bottom:7px">'
         +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">'
@@ -1454,11 +1455,11 @@ async function renderQrBatchHistory(syncedData){
         +'<div style="font-size:0.7rem;color:#94a3b8">Plage '+escHtml(_formatQrBatchRange(g.ids))+' · Qté '+total+' · Restants '+remaining+' · Utilisés '+usedCount+'</div>'
         +'</div>'
         +'<div style="display:flex;flex-direction:column;gap:5px">'
-        +'<button onclick="selectQrBatchForLov(\''+String(g.batchId).replace(/'/g,"\\'")+"\')" style="padding:6px 8px;background:"+(active?'#1d4ed8':'#1e293b')+";border:1px solid "+(active?'#60a5fa':'#334155')+";border-radius:7px;color:"+(active?'#dbeafe':'#cbd5e1')+";font-size:0.68rem;cursor:pointer;white-space:nowrap">"+(active?'Lot actif':'Utiliser ce lot')+"</button>'
-        +'<button onclick="previewQrBatch(\''+String(g.batchId).replace(/'/g,"\\'")+"\')" style="padding:6px 8px;background:"+(opened?'#0f766e':'#1e293b')+";border:1px solid "+(opened?'#14b8a6':'#334155')+";border-radius:7px;color:"+(opened?'#ccfbf1':'#cbd5e1')+";font-size:0.68rem;cursor:pointer;white-space:nowrap">"+(opened?'QR affichés':'Voir les QR')+"</button>'
-        +'<button onclick="exportQrBatch(\''+String(g.batchId).replace(/'/g,"\\'")+"\')" style="padding:6px 8px;background:#1e293b;border:1px solid #334155;border-radius:7px;color:#cbd5e1;font-size:0.68rem;cursor:pointer;white-space:nowrap">Export PNG</button>'
-        +'<button onclick="deleteQrBatchFromDb(\''+String(g.batchId).replace(/'/g,"\\'")+"\')" style="padding:6px 8px;background:#7c2d12;border:1px solid #ea580c;border-radius:7px;color:#ffedd5;font-size:0.68rem;cursor:pointer;white-space:nowrap">Supprimer de la base</button>'
-        +'<button onclick="deleteQrBatch(\''+String(g.batchId).replace(/'/g,"\\'")+"\')" style="padding:6px 8px;background:#450a0a;border:1px solid #7f1d1d;border-radius:7px;color:#fecaca;font-size:0.68rem;cursor:pointer;white-space:nowrap">Supprimer</button>'
+        +'<button onclick="selectQrBatchForLov(\''+batchEsc+'\')" style="padding:6px 8px;background:'+(active?'#1d4ed8':'#1e293b')+';border:1px solid '+(active?'#60a5fa':'#334155')+';border-radius:7px;color:'+(active?'#dbeafe':'#cbd5e1')+';font-size:0.68rem;cursor:pointer;white-space:nowrap">'+(active?'Lot actif':'Utiliser ce lot')+'</button>'
+        +'<button onclick="previewQrBatch(\''+batchEsc+'\')" style="padding:6px 8px;background:'+(opened?'#0f766e':'#1e293b')+';border:1px solid '+(opened?'#14b8a6':'#334155')+';border-radius:7px;color:'+(opened?'#ccfbf1':'#cbd5e1')+';font-size:0.68rem;cursor:pointer;white-space:nowrap">'+(opened?'QR affichés':'Voir les QR')+'</button>'
+        +'<button onclick="exportQrBatch(\''+batchEsc+'\')" style="padding:6px 8px;background:#1e293b;border:1px solid #334155;border-radius:7px;color:#cbd5e1;font-size:0.68rem;cursor:pointer;white-space:nowrap">Export PNG</button>'
+        +'<button onclick="deleteQrBatchFromDb(\''+batchEsc+'\')" style="padding:6px 8px;background:#7c2d12;border:1px solid #ea580c;border-radius:7px;color:#ffedd5;font-size:0.68rem;cursor:pointer;white-space:nowrap">Supprimer de la base</button>'
+        +'<button onclick="deleteQrBatch(\''+batchEsc+'\')" style="padding:6px 8px;background:#450a0a;border:1px solid #7f1d1d;border-radius:7px;color:#fecaca;font-size:0.68rem;cursor:pointer;white-space:nowrap">Supprimer</button>'
         +'</div>'
         +'</div>'
         +'</div>';
