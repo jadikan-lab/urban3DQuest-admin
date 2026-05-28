@@ -189,15 +189,15 @@
   </div>
   <div class="field" id="questField" style="display:none">
     <label>Quête <span style="color:var(--ink-3);font-weight:normal;text-transform:none">(optionnel)</span></label>
-    <select id="fQuestSelect">
+    <select id="fQuestSelect" onchange="loadQrLov()">
       <option value="">— Sans quête —</option>
     </select>
   </div>
   <div class="field">
     <label>Type</label>
     <div class="type-row">
-      <div class="type-btn active" id="typeFixed" onclick="setType('fixed')">Fixe<br><small>Tout le monde peut flasher</small></div>
-      <div class="type-btn" id="typeUnique" onclick="setType('unique')">Unique<br><small>Premier arrive seulement</small></div>
+      <div class="type-btn" id="typeFixed" onclick="setType('fixed')">Fixe<br><small>Tout le monde peut flasher</small></div>
+      <div class="type-btn active" id="typeUnique" onclick="setType('unique')">Unique<br><small>Premier arrive seulement</small></div>
     </div>
   </div>
   <div class="toggle-row" style="margin-top:14px">
@@ -491,7 +491,7 @@ function buildGameUrl(param,value){return GAME_BASE_URL+'/?'+param+'='+value+'&v
 function buildGameUrlPrint(param,value){return GAME_BASE_URL+'/?'+param+'='+value;}
 var ADMIN_UI_VERSION='v3.9.9';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
-var currentLoc=null,currentType='fixed',visVisible=true,gameActive=true,modeMap=true,modeCompass=true,photoDataUrls=[],adminMap=null,mapLayers=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
+var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,photoDataUrls=[],adminMap=null,mapLayers=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
 var _adminTitle=document.getElementById('adminTitle');
 if(_adminTitle)_adminTitle.textContent='Urban3DQuest Admin · '+ADMIN_UI_VERSION+' · '+SUPABASE_ENV.label;
 var _envChip=document.getElementById('envChip');
@@ -516,6 +516,24 @@ async function uploadPhotoDataUrl(dataUrl,scope){
     return publicUrl||null;
   }catch(e){
     return null;
+  }
+}
+async function uploadPhotoDataUrlDetailed(dataUrl,scope){
+  try{
+    var blob=await(await fetch(dataUrl)).blob();
+    var uid=(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));
+    var folder='admin_'+SUPABASE_ENV.name+'/'+(scope||'treasure');
+    var objectPath=folder+'/'+uid+'.jpg';
+    var upRes=await db.storage.from('photos').upload(objectPath,blob,{contentType:'image/jpeg',upsert:false});
+    if(upRes.error){
+      return {url:null,error:upRes.error.message||'upload failed'};
+    }
+    var pubRes=db.storage.from('photos').getPublicUrl(objectPath);
+    var publicUrl=pubRes&&pubRes.data&&pubRes.data.publicUrl?pubRes.data.publicUrl:'';
+    if(!publicUrl)return {url:null,error:'public URL missing after upload'};
+    return {url:publicUrl,error:null};
+  }catch(e){
+    return {url:null,error:(e&&e.message)?e.message:'unexpected upload error'};
   }
 }
 function formatAuthErrorMessage(err){
@@ -565,7 +583,7 @@ async function adminLogout(){await db.auth.signOut();location.reload();}
 async function init(){
   var r=await db.from('config').select('key').limit(1);
   document.getElementById('dbDot').className='dot'+(r.error?'':' ok');
-  startGeo();await loadConfig();loadQrLov();
+  startGeo();await loadConfig();setType('unique');loadQrLov();
   // Restaurer l'onglet actif depuis localStorage
   var savedTab=localStorage.getItem('u3dq_admin_tab');
   if(savedTab&&savedTab!=='add'){
@@ -633,10 +651,15 @@ async function onCfgGuideFileChange(evt,kind){
       reader.onerror=function(){reject(new Error('Lecture fichier impossible'));};
       reader.readAsDataURL(file);
     });
-    var uploaded=await uploadPhotoDataUrl(dataUrl,'config_qr_guide');
-    if(!uploaded)uploaded=await uploadPhotoDataUrl(dataUrl,'treasure');
-    if(!uploaded){alert('Upload impossible sur '+SUPABASE_ENV.label+'. Vérifie les droits du bucket photos.');return;}
-    _setCfgGuidePreview(kind,uploaded);
+    var firstTry=await uploadPhotoDataUrlDetailed(dataUrl,'config_qr_guide');
+    var secondTry=firstTry.url?{url:firstTry.url,error:null}:await uploadPhotoDataUrlDetailed(dataUrl,'treasure');
+    if(secondTry.url){
+      _setCfgGuidePreview(kind,secondTry.url);
+      return;
+    }
+    _setCfgGuidePreview(kind,dataUrl);
+    var details=[firstTry.error,secondTry.error].filter(Boolean).join(' | ');
+    alert('Upload Storage bloqué ('+SUPABASE_ENV.label+'). Image gardée en mode embarqué (data URL). Détail: '+(details||'aucun détail'));
   }catch(e){
     alert('Erreur image consigne : '+(e&&e.message?e.message:'inconnue'));
   }finally{
@@ -1216,6 +1239,53 @@ function listPlannedQrIds(prefix,start,count){var ids=[];for(var i=start;i<start
 function slugifyQr(v){return String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,40)||'sans_quete';}
 function getLastQrBatch(){return JSON.parse(localStorage.getItem('u3dq_qr_last_batch')||'null');}
 function setLastQrBatch(b){localStorage.setItem('u3dq_qr_last_batch',JSON.stringify(b));}
+function _uniqQrIds(ids){
+  var out=[];var seen={};
+  (ids||[]).forEach(function(id){
+    var v=String(id||'').trim();
+    if(!v||seen[v])return;
+    seen[v]=1;out.push(v);
+  });
+  return out;
+}
+function _mergeQrMeta(a,b){
+  var out={};
+  Object.keys(a||{}).forEach(function(k){out[k]=a[k];});
+  Object.keys(b||{}).forEach(function(k){out[k]=b[k];});
+  return out;
+}
+async function _readSharedQrCatalog(){
+  var res=await db.from('config').select('key,value').in('key',['qrGeneratedCatalog','qrGeneratedMeta']);
+  if(res.error||!res.data)return {ids:[],meta:{}};
+  var cfg={};
+  res.data.forEach(function(r){cfg[r.key]=r.value;});
+  var ids=[];var meta={};
+  if(cfg.qrGeneratedCatalog){try{ids=JSON.parse(cfg.qrGeneratedCatalog)||[];}catch(e){ids=[];}}
+  if(cfg.qrGeneratedMeta){try{meta=JSON.parse(cfg.qrGeneratedMeta)||{};}catch(e){meta={};}}
+  return {ids:_uniqQrIds(ids),meta:meta&&typeof meta==='object'?meta:{}};
+}
+async function _writeSharedQrCatalog(ids,meta){
+  await db.from('config').upsert({key:'qrGeneratedCatalog',value:JSON.stringify(_uniqQrIds(ids))});
+  await db.from('config').upsert({key:'qrGeneratedMeta',value:JSON.stringify(meta||{})});
+}
+async function syncQrCatalogCloud(){
+  var localIds=_uniqQrIds(JSON.parse(localStorage.getItem('u3dq_qr_generated')||'[]'));
+  var localMeta=JSON.parse(localStorage.getItem('u3dq_qr_meta')||'{}');
+  var shared=await _readSharedQrCatalog();
+  var mergedIds=_uniqQrIds((shared.ids||[]).concat(localIds||[]));
+  var mergedMeta=_mergeQrMeta(shared.meta||{},localMeta||{});
+  localStorage.setItem('u3dq_qr_generated',JSON.stringify(mergedIds));
+  localStorage.setItem('u3dq_qr_meta',JSON.stringify(mergedMeta));
+
+  var localIdsStr=JSON.stringify(localIds||[]);
+  var sharedIdsStr=JSON.stringify(shared.ids||[]);
+  var localMetaStr=JSON.stringify(localMeta||{});
+  var sharedMetaStr=JSON.stringify(shared.meta||{});
+  if(localIdsStr!==sharedIdsStr||localMetaStr!==sharedMetaStr){
+    await _writeSharedQrCatalog(mergedIds,mergedMeta);
+  }
+  return {ids:mergedIds,meta:mergedMeta};
+}
 async function generateQRCodes(){
   var prefix=(document.getElementById('qrPrefix').value||'QR').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6);
   if(!prefix){alert('Préfixe invalide.');return;}
@@ -1271,8 +1341,9 @@ async function generateQRCodes(){
   document.getElementById('zipPngBtn').disabled=false;
   localStorage.setItem('u3dq_qr_generated', JSON.stringify(generatedIds));
   localStorage.setItem('u3dq_qr_meta', JSON.stringify(meta));
+  await syncQrCatalogCloud();
 }
-function editQrMeta(id){
+async function editQrMeta(id){
   var meta=JSON.parse(localStorage.getItem('u3dq_qr_meta')||'{}');
   var m=meta[id]||{};
   var newQuest=prompt('Quête pour '+id+' (vide = aucune) :',m.quest||'');
@@ -1281,6 +1352,7 @@ function editQrMeta(id){
   if(newObjet===null)return;
   meta[id]={prefix:m.prefix||String(id).split('-')[0]||'QR',batchId:m.batchId||'',createdAt:m.createdAt||'',quest:newQuest.trim(),objet:newObjet.trim()};
   localStorage.setItem('u3dq_qr_meta', JSON.stringify(meta));
+  await syncQrCatalogCloud();
   restoreQrGrid();
 }
 function renderEnvQRCodes(){
@@ -1322,7 +1394,7 @@ function onQrQuestChange(){
   prefixEl.value=sug||'QR';
 }
 async function restoreQrGrid(){
-  renderEnvQRCodes();var ids=JSON.parse(localStorage.getItem('u3dq_qr_generated')||'[]');var meta=JSON.parse(localStorage.getItem('u3dq_qr_meta')||'{}');var grid=document.getElementById('qrGrid');grid.innerHTML='';if(!ids.length){document.getElementById('qrInfo').style.display='none';document.getElementById('zipPngBtn').disabled=true;return;}var res=await db.from('treasures').select('id,found_by');var tMap={};(res.data||[]).forEach(function(t){tMap[t.id]=t.found_by;});ids.forEach(function(id){var sid='qrs_r_'+id.replace(/[^a-z0-9]/gi,'_');var placed=id in tMap;var found=placed&&tMap[id]&&tMap[id].length>0;var borderColor=found?'#f97316':placed?'#4ade80':'transparent';var labelColor=found?'#f97316':placed?'#4ade80':'#93c5fd';var badge=found?' 🎯':placed?' ✓':'';var m=meta[id]||{};var qBadge=m.quest?'<span style="background:#1c3351;color:#7dd3fc;font-size:0.6rem;font-weight:600;padding:1px 5px;border-radius:6px;margin-left:3px">'+m.quest+'</span>':'';var oBadge=m.objet?'<div style="font-size:0.62rem;color:#94a3b8;margin-top:2px">&#128230; '+m.objet+'</div>':'';var card=document.createElement('div');card.className='qr-card';card.id='qrc_'+id.replace(/[^a-z0-9]/gi,'_');card.style.opacity=found?'0.35':placed?'0.55':'1';card.style.border='2px solid '+borderColor;card.style.borderRadius='10px';card.style.position='relative';card.innerHTML='<div class="qr-card-id" style="color:'+labelColor+';font-size:1.08rem;line-height:1.05">'+id+badge+qBadge+'</div><div style="font-size:0.64rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#94a3b8;margin-top:2px">JADIKAN</div>'+oBadge+'<div style="background:#ffffff;padding:8px;border-radius:8px;display:inline-block"><div id="'+sid+'"></div></div>'+'<button onclick="editQrMeta(\''+id+'\')" style="margin-top:4px;width:100%;padding:3px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#94a3b8;font-size:0.65rem;cursor:pointer">&#9999;&#65039; Modifier</button>';grid.appendChild(card);var url=buildGameUrl('found',id);new QRCode(document.getElementById(sid),{text:url,width:150,height:150,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.L});});var total=ids.length;var placedCount=ids.filter(function(id){return id in tMap;}).length;var foundCount=ids.filter(function(id){return tMap[id]&&tMap[id].length>0;}).length;var info=document.getElementById('qrInfo');info.innerHTML=total+' codes — <span style="color:#4ade80">'+placedCount+' posés ✓</span>, <span style="color:#f97316">'+foundCount+' trouvés 🎯</span>, '+(total-placedCount)+' disponibles';info.style.display='block';document.getElementById('zipPngBtn').disabled=false;}
+  renderEnvQRCodes();var synced=await syncQrCatalogCloud();var ids=synced.ids||[];var meta=synced.meta||{};var grid=document.getElementById('qrGrid');grid.innerHTML='';if(!ids.length){document.getElementById('qrInfo').style.display='none';document.getElementById('zipPngBtn').disabled=true;return;}var res=await db.from('treasures').select('id,found_by');var tMap={};(res.data||[]).forEach(function(t){tMap[t.id]=t.found_by;});ids.forEach(function(id){var sid='qrs_r_'+id.replace(/[^a-z0-9]/gi,'_');var placed=id in tMap;var found=placed&&tMap[id]&&tMap[id].length>0;var borderColor=found?'#f97316':placed?'#4ade80':'transparent';var labelColor=found?'#f97316':placed?'#4ade80':'#93c5fd';var badge=found?' 🎯':placed?' ✓':'';var m=meta[id]||{};var qBadge=m.quest?'<span style="background:#1c3351;color:#7dd3fc;font-size:0.6rem;font-weight:600;padding:1px 5px;border-radius:6px;margin-left:3px">'+m.quest+'</span>':'';var oBadge=m.objet?'<div style="font-size:0.62rem;color:#94a3b8;margin-top:2px">&#128230; '+m.objet+'</div>':'';var card=document.createElement('div');card.className='qr-card';card.id='qrc_'+id.replace(/[^a-z0-9]/gi,'_');card.style.opacity=found?'0.35':placed?'0.55':'1';card.style.border='2px solid '+borderColor;card.style.borderRadius='10px';card.style.position='relative';card.innerHTML='<div class="qr-card-id" style="color:'+labelColor+';font-size:1.08rem;line-height:1.05">'+id+badge+qBadge+'</div><div style="font-size:0.64rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#94a3b8;margin-top:2px">JADIKAN</div>'+oBadge+'<div style="background:#ffffff;padding:8px;border-radius:8px;display:inline-block"><div id="'+sid+'"></div></div>'+'<button onclick="editQrMeta(\''+id+'\')" style="margin-top:4px;width:100%;padding:3px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#94a3b8;font-size:0.65rem;cursor:pointer">&#9999;&#65039; Modifier</button>';grid.appendChild(card);var url=buildGameUrl('found',id);new QRCode(document.getElementById(sid),{text:url,width:150,height:150,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.L});});var total=ids.length;var placedCount=ids.filter(function(id){return id in tMap;}).length;var foundCount=ids.filter(function(id){return tMap[id]&&tMap[id].length>0;}).length;var info=document.getElementById('qrInfo');info.innerHTML=total+' codes — <span style="color:#4ade80">'+placedCount+' posés ✓</span>, <span style="color:#f97316">'+foundCount+' trouvés 🎯</span>, '+(total-placedCount)+' disponibles';info.style.display='block';document.getElementById('zipPngBtn').disabled=false;}
 function qrGenericDisplayCode(id){
   var m=String(id||'').match(/-(\d+)$/);
   if(m&&m[1])return m[1];
@@ -1330,7 +1402,7 @@ function qrGenericDisplayCode(id){
   return parts.length>1?parts[parts.length-1]:String(id||'');
 }
 async function downloadQrZip(format){var fmt='png';var btn=document.getElementById('zipPngBtn');var batch=getLastQrBatch();var ids=(batch&&batch.ids)||[];if(!ids.length){alert('Générez d\'abord un lot de QR codes.');return;}btn.disabled=true;btn.textContent='⏳ Création du ZIP PNG ('+ids.length+' fichiers)…';var meta=JSON.parse(localStorage.getItem('u3dq_qr_meta')||'{}');var zip=new JSZip();var OUT_SZ=400;var QR_SZ=352;var QUIET=24;var PAD=96;var qSlug=slugifyQr(batch.quest||'sans_quete');var p=(batch.prefix||'QR').toUpperCase().replace(/[^A-Z0-9]/g,'');var folderName='qr_'+qSlug+'_'+p+'_'+String(batch.start).padStart(3,'0')+'-'+String(batch.end).padStart(3,'0');var outFolder=zip.folder(folderName);var manifest=['batch_id,quest,prefix,code,url,objet,created_at'];ids.forEach(function(id){var url=buildGameUrl('found',id);var m=meta[id]||{};var num=qrGenericDisplayCode(id);var basePrefix=(m.prefix||String(id).split('-')[0]||'QR').toUpperCase().replace(/[^A-Z0-9]/g,'');var display=basePrefix?basePrefix+'-'+num:num;var labelForPng=display+'\nJADIKAN';var payload=buildQrAsset(url,labelForPng,QRCode.CorrectLevel.L,fmt,{outSize:OUT_SZ,qrSize:QR_SZ,quiet:QUIET,bottomPad:PAD});if(payload&&outFolder){var safeCode=display.replace(/[^a-zA-Z0-9\-_]/g,'_');outFolder.file(safeCode+'.png',payload,{base64:true});}manifest.push([batch.id||'',batch.quest||'',basePrefix,display,url,m.objet||batch.objet||'',m.createdAt||batch.createdAt||''].map(function(v){return '"'+String(v).replace(/"/g,'""')+'"';}).join(','));});zip.file('manifest.csv',manifest.join('\n'));var blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=folderName+'.zip';document.body.appendChild(a);a.click();document.body.removeChild(a);btn.disabled=false;btn.textContent='⬇ Télécharger ZIP PNG (400px · Photoshop)';}
-async function loadQrLov(){var generated=JSON.parse(localStorage.getItem('u3dq_qr_generated')||'[]');var sel=document.getElementById('fQrSelect');var info=document.getElementById('fQrInfo');sel.innerHTML='<option value="">— Aucun QR (ID auto) —</option>';var manOpt=document.createElement('option');manOpt.value='__manual__';manOpt.textContent='✏️ Saisir manuellement';sel.appendChild(manOpt);if(!generated.length){info.textContent='Aucun QR généré — allez dans l\'onglet QR pour en créer';info.style.color='#fb923c';return;}var res=await db.from('treasures').select('id');var used=new Set((res.data||[]).map(function(t){return t.id;}));var available=generated.filter(function(id){return!used.has(id);});var metaLov=JSON.parse(localStorage.getItem('u3dq_qr_meta')||'{}');available.forEach(function(id,idx){var opt=document.createElement('option');opt.value=id;var m=metaLov[id]||{};var suffix=(m.quest?' ['+m.quest+']':'')+(m.objet?' — '+m.objet:'');opt.textContent=(idx===0?'⬆ PROCHAIN : ':'')+id+suffix;sel.appendChild(opt);});var total=generated.length;info.textContent=available.length+' QR disponibles sur '+total+' générés'+(available.length===0?' — tous déjà posés':'');info.style.color=available.length===0?'#fb923c':'#475569';if(available.length>0){sel.value=available[0];document.getElementById('fQrNum').style.display='none';}}
+async function loadQrLov(){var synced=await syncQrCatalogCloud();var generated=synced.ids||[];var metaLov=synced.meta||{};var sel=document.getElementById('fQrSelect');var info=document.getElementById('fQrInfo');sel.innerHTML='<option value="">— Aucun QR (ID auto) —</option>';var manOpt=document.createElement('option');manOpt.value='__manual__';manOpt.textContent='✏️ Saisir manuellement';sel.appendChild(manOpt);if(!generated.length){info.textContent='Aucun QR généré — allez dans l\'onglet QR pour en créer';info.style.color='#fb923c';return;}var res=await db.from('treasures').select('id');var used=new Set((res.data||[]).map(function(t){return t.id;}));var addQuest=(document.getElementById('fQuestSelect')||{}).value||'';var available=generated.filter(function(id){if(used.has(id))return false;var m=metaLov[id]||{};if(!addQuest)return true;return (m.quest||'')===addQuest;});available.forEach(function(id,idx){var opt=document.createElement('option');opt.value=id;var m=metaLov[id]||{};var suffix=(m.quest?' ['+m.quest+']':'')+(m.objet?' — '+m.objet:'');opt.textContent=(idx===0?'⬆ PROCHAIN : ':'')+id+suffix;sel.appendChild(opt);});var total=generated.length;info.textContent=available.length+' QR disponibles sur '+total+' générés'+(addQuest?' (quête '+addQuest+')':'')+(available.length===0?' — aucun ID libre pour ce filtre':'');info.style.color=available.length===0?'#fb923c':'#475569';if(available.length>0){sel.value=available[0];document.getElementById('fQrNum').style.display='none';}}
 function onQrSelectChange(){var v=document.getElementById('fQrSelect').value;var inp=document.getElementById('fQrNum');if(v==='__manual__'){inp.style.display='block';inp.focus();}else{inp.style.display='none';inp.value=v;}}
 var _questTargetId=null;
 var _questTargetBtn=null;
