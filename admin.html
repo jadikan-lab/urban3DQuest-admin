@@ -1350,46 +1350,23 @@ async function deleteQrBatch(batchId){
   var groups=_groupQrBatches(ids,meta);
   var g=groups.find(function(x){return x.batchId===batchId;});
   if(!g){alert('Lot introuvable.');return;}
-  var res=await db.from('treasures').select('id');
-  var used=new Set((res.data||[]).map(function(t){return t.id;}));
-  var removable=g.ids.filter(function(id){return !used.has(id);});
-  var blocked=g.ids.length-removable.length;
-  if(!removable.length){alert('Aucun QR supprimable dans ce lot (ils sont déjà posés).');return;}
-  var ok=confirm('Supprimer '+removable.length+' QR non posés du lot ?'+(blocked?('\n'+blocked+' QR déjà posés seront conservés.'):'')+'\nCette action est irréversible.');
-  if(!ok)return;
-  var keepIds=ids.filter(function(id){return removable.indexOf(id)===-1;});
-  removable.forEach(function(id){delete meta[id];});
-  localStorage.setItem('u3dq_qr_generated',JSON.stringify(keepIds));
-  localStorage.setItem('u3dq_qr_meta',JSON.stringify(meta));
-  await _writeSharedQrCatalog(keepIds,meta);
-  if(getSelectedQrBatchId()===batchId)setSelectedQrBatchId('');
-  if(getVisibleQrBatchId()===batchId)setVisibleQrBatchId('');
-  await loadQrLov();
-  await renderQrBatchHistory();
-  await restoreQrGrid();
-}
-async function deleteQrBatchFromDb(batchId){
-  var synced=await syncQrCatalogCloud();
-  var ids=synced.ids||[];
-  var meta=synced.meta||{};
-  var groups=_groupQrBatches(ids,meta);
-  var g=groups.find(function(x){return x.batchId===batchId;});
-  if(!g){alert('Lot introuvable.');return;}
 
-  var res=await db.from('treasures').select('id,found_by').in('id',g.ids);
-  if(res.error){alert('Erreur lecture base: '+res.error.message);return;}
-  var rows=res.data||[];
-  if(!rows.length){alert('Aucun trésor de ce lot en base.');return;}
+  var tRes=await db.from('treasures').select('id,found_by').in('id',g.ids);
+  if(tRes.error){alert('Erreur lecture base: '+tRes.error.message);return;}
+  var inDb=tRes.data||[];
+  var foundCount=inDb.filter(function(t){return !!(t.found_by&&String(t.found_by).trim());}).length;
 
-  var foundRows=rows.filter(function(t){return !!(t.found_by&&String(t.found_by).trim());});
-  var deletable=rows.filter(function(t){return !(t.found_by&&String(t.found_by).trim());}).map(function(t){return t.id;});
-  if(!deletable.length){alert('Impossible: toutes les entrées de ce lot sont déjà trouvées.');return;}
+  var eRes=await db.from('events').select('id,treasure_id').in('treasure_id',g.ids);
+  if(eRes.error){alert('Erreur lecture événements: '+eRes.error.message);return;}
+  var eventsCount=(eRes.data||[]).length;
 
-  var summary='Suppression base du lot '+(g.batchId==='legacy'?'legacy':g.batchId)+'\n\n'
-    +'- En base: '+rows.length+'\n'
-    +'- Supprimables: '+deletable.length+'\n'
-    +'- Bloqués (déjà trouvés): '+foundRows.length+'\n\n'
-    +'Confirmer la suppression des entrées supprimables dans la table treasures ?';
+  var summary='Suppression totale du lot '+(g.batchId==='legacy'?'legacy':g.batchId)+'\n\n'
+    +'- IDs lot: '+g.ids.length+'\n'
+    +'- Trésors en base: '+inDb.length+'\n'
+    +'- Déjà trouvés: '+foundCount+'\n'
+    +'- Événements liés: '+eventsCount+'\n\n'
+    +'Action: suppression COMPLETE (catalogue + treasures + events).\n'
+    +'Cette action est irréversible.';
   if(!confirm(summary))return;
 
   var token=prompt('Validation finale: tape SUPPRIMER pour confirmer');
@@ -1398,29 +1375,26 @@ async function deleteQrBatchFromDb(batchId){
     return;
   }
 
-  var del=await db.from('treasures').delete().in('id',deletable);
-  if(del.error){alert('Erreur suppression base: '+del.error.message);return;}
+  if(eventsCount>0){
+    var delEvents=await db.from('events').delete().in('treasure_id',g.ids);
+    if(delEvents.error){alert('Erreur suppression événements: '+delEvents.error.message);return;}
+  }
+  if(inDb.length>0){
+    var delTreasures=await db.from('treasures').delete().in('id',g.ids);
+    if(delTreasures.error){alert('Erreur suppression trésors: '+delTreasures.error.message);return;}
+  }
 
-  var keepIds=ids.filter(function(id){return deletable.indexOf(id)===-1;});
-  deletable.forEach(function(id){delete meta[id];});
+  var keepIds=ids.filter(function(id){return g.ids.indexOf(id)===-1;});
+  g.ids.forEach(function(id){delete meta[id];});
   localStorage.setItem('u3dq_qr_generated',JSON.stringify(keepIds));
   localStorage.setItem('u3dq_qr_meta',JSON.stringify(meta));
   await _writeSharedQrCatalog(keepIds,meta);
-
-  if(getSelectedQrBatchId()===batchId){
-    var stillThere=keepIds.some(function(id){return _qrBatchOf(meta,id)===batchId;});
-    if(!stillThere)setSelectedQrBatchId('');
-  }
-  if(getVisibleQrBatchId()===batchId){
-    var stillVisible=keepIds.some(function(id){return _qrBatchOf(meta,id)===batchId;});
-    if(!stillVisible)setVisibleQrBatchId('');
-  }
-
+  if(getSelectedQrBatchId()===batchId)setSelectedQrBatchId('');
+  if(getVisibleQrBatchId()===batchId)setVisibleQrBatchId('');
   await loadQrLov();
   await renderQrBatchHistory();
   await restoreQrGrid();
-
-  alert('Suppression base terminée: '+deletable.length+' entrée(s) supprimée(s).'+(foundRows.length?(' '+foundRows.length+' déjà trouvée(s) conservée(s).'):''));
+  alert('Suppression terminée: lot supprimé complètement ('+g.ids.length+' QR).');
 }
 async function renderQrBatchHistory(syncedData){
   var wrap=document.getElementById('qrBatchHistory');
@@ -1458,8 +1432,7 @@ async function renderQrBatchHistory(syncedData){
         +'<button onclick="selectQrBatchForLov(\''+batchEsc+'\')" style="padding:6px 8px;background:'+(active?'#1d4ed8':'#1e293b')+';border:1px solid '+(active?'#60a5fa':'#334155')+';border-radius:7px;color:'+(active?'#dbeafe':'#cbd5e1')+';font-size:0.68rem;cursor:pointer;white-space:nowrap">'+(active?'Lot actif':'Utiliser ce lot')+'</button>'
         +'<button onclick="previewQrBatch(\''+batchEsc+'\')" style="padding:6px 8px;background:'+(opened?'#0f766e':'#1e293b')+';border:1px solid '+(opened?'#14b8a6':'#334155')+';border-radius:7px;color:'+(opened?'#ccfbf1':'#cbd5e1')+';font-size:0.68rem;cursor:pointer;white-space:nowrap">'+(opened?'QR affichés':'Voir les QR')+'</button>'
         +'<button onclick="exportQrBatch(\''+batchEsc+'\')" style="padding:6px 8px;background:#1e293b;border:1px solid #334155;border-radius:7px;color:#cbd5e1;font-size:0.68rem;cursor:pointer;white-space:nowrap">Export PNG</button>'
-        +'<button onclick="deleteQrBatchFromDb(\''+batchEsc+'\')" style="padding:6px 8px;background:#7c2d12;border:1px solid #ea580c;border-radius:7px;color:#ffedd5;font-size:0.68rem;cursor:pointer;white-space:nowrap">Supprimer de la base</button>'
-        +'<button onclick="deleteQrBatch(\''+batchEsc+'\')" style="padding:6px 8px;background:#450a0a;border:1px solid #7f1d1d;border-radius:7px;color:#fecaca;font-size:0.68rem;cursor:pointer;white-space:nowrap">Supprimer</button>'
+        +'<button onclick="deleteQrBatch(\''+batchEsc+'\')" style="padding:6px 8px;background:#7c2d12;border:1px solid #ea580c;border-radius:7px;color:#ffedd5;font-size:0.68rem;cursor:pointer;white-space:nowrap">Supprimer lot (total)</button>'
         +'</div>'
         +'</div>'
         +'</div>';
