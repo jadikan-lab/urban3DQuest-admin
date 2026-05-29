@@ -277,6 +277,11 @@
     <span id="gameLabel">Jeu actif</span>
   </div>
   <div class="toggle-row" style="margin-top:6px">
+    <div class="toggle" id="egressToggle" onclick="toggleEgressEmergency()"></div>
+    <span id="egressLabel">Mode urgence egress inactif</span>
+  </div>
+  <div style="font-size:0.72rem;color:#94a3b8;margin:-8px 0 12px">Active ce mode pour couper les appels lourds côté joueur (classement/events). Désactive pour revenir au comportement normal.</div>
+  <div class="toggle-row" style="margin-top:6px">
     <div class="toggle on" id="modeMapToggle" onclick="toggleModeMap()"></div>
     <span>🗺 Mode Carte activé (balises mobiles QR)</span>
   </div>
@@ -525,7 +530,7 @@ function buildGameUrl(param,value){return GAME_BASE_URL+'/?'+param+'='+value+'&v
 function buildGameUrlPrint(param,value){return GAME_BASE_URL+'/?'+param+'='+value;}
 var ADMIN_UI_VERSION='v3.9.9';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
-var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,photoDataUrls=[],adminMap=null,mapLayers=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
+var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,egressEmergency=false,photoDataUrls=[],adminMap=null,mapLayers=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
 var _adminTitle=document.getElementById('adminTitle');
 if(_adminTitle)_adminTitle.textContent='Urban3DQuest Admin · '+ADMIN_UI_VERSION+' · '+SUPABASE_ENV.label;
 var _envChip=document.getElementById('envChip');
@@ -893,6 +898,10 @@ async function loadConfig(){
     document.getElementById('gameLabel').textContent=gameActive?'Jeu actif':'Jeu en pause';
   }
 
+  egressEmergency=cfg.egressEmergency==='true';
+  document.getElementById('egressToggle').classList.toggle('on',egressEmergency);
+  document.getElementById('egressLabel').textContent=egressEmergency?'Mode urgence egress actif':'Mode urgence egress inactif';
+
   teaserEnabled=cfg.teaserEnabled==='true';
   document.getElementById('teaserToggle').classList.toggle('on',teaserEnabled);
   document.getElementById('teaserLabel').textContent=teaserEnabled?'Landing teaser active':'Landing teaser inactive';
@@ -944,6 +953,7 @@ async function loadConfig(){
 function toggleGame(){gameActive=!gameActive;document.getElementById('gameToggle').classList.toggle('on',gameActive);document.getElementById('gameLabel').textContent=gameActive?'Jeu actif':'Jeu en pause';db.from('config').upsert({key:'gameActive',value:String(gameActive)}).then(function(){showStatus(document.getElementById('stCfg'),'ok',gameActive?'▶ Jeu relancé':'⏸ Jeu mis en pause');});}
 function toggleModeMap(){modeMap=!modeMap;document.getElementById('modeMapToggle').classList.toggle('on',modeMap);db.from('config').upsert({key:'modeMap',value:String(modeMap)}).then(function(){showStatus(document.getElementById('stCfg'),'ok','Mode Carte '+(modeMap?'activé':'désactivé'));});}
 function toggleModeCompass(){modeCompass=!modeCompass;document.getElementById('modeCompassToggle').classList.toggle('on',modeCompass);db.from('config').upsert({key:'modeCompass',value:String(modeCompass)}).then(function(){showStatus(document.getElementById('stCfg'),'ok','Mode Boussole '+(modeCompass?'activé':'désactivé'));});}
+function toggleEgressEmergency(){egressEmergency=!egressEmergency;document.getElementById('egressToggle').classList.toggle('on',egressEmergency);document.getElementById('egressLabel').textContent=egressEmergency?'Mode urgence egress actif':'Mode urgence egress inactif';db.from('config').upsert({key:'egressEmergency',value:String(egressEmergency)}).then(function(){showStatus(document.getElementById('stCfg'),'ok',egressEmergency?'🚨 Mode urgence egress activé':'✅ Mode urgence egress désactivé');}).catch(function(e){showStatus(document.getElementById('stCfg'),'err','Erreur egress mode: '+(e&&e.message?e.message:'inconnue'));});}
 function toggleTeaser(){teaserEnabled=!teaserEnabled;document.getElementById('teaserToggle').classList.toggle('on',teaserEnabled);document.getElementById('teaserLabel').textContent=teaserEnabled?'Landing teaser active':'Landing teaser inactive';}
 function onCityChange(){var v=document.getElementById('cfgCity').value;document.getElementById('cfgCustomCoords').style.display=(v==='custom'?'block':'none');if(adminMap&&v!=='custom'){var parts=v.split(',');adminMap.setView([parseFloat(parts[0]),parseFloat(parts[1])],14);}}
 function getMapCenterValue(){var v=document.getElementById('cfgCity').value;if(v==='custom'){var lat=parseFloat(document.getElementById('cfgLat').value);var lng=parseFloat(document.getElementById('cfgLng').value);if(isNaN(lat)||isNaN(lng))return null;return lat+','+lng;}return v;}
@@ -957,6 +967,7 @@ async function saveConfig(){
   await db.from('config').upsert({key:'modeMap',value:String(modeMap)});
   await db.from('config').upsert({key:'modeCompass',value:String(modeCompass)});
   await db.from('config').upsert({key:'gameActive',value:String(gameActive)});
+  await db.from('config').upsert({key:'egressEmergency',value:String(egressEmergency)});
   await db.from('config').upsert({key:'teaserEnabled',value:String(teaserEnabled)});
   await db.from('config').upsert({key:'mapCenter',value:center});
 

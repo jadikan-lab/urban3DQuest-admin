@@ -25,6 +25,7 @@ using (
     'gameStart',
     'gameCode',
     'guestLandingUrl',
+    'egressEmergency',
     'activeQuests',
     'activeQuest',
     'qrGuideFlashUrl',
