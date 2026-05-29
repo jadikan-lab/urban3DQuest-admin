@@ -1,4 +1,5 @@
 -- Emergency egress lockdown (temporary)
+-- Rollback companion: migration_emergency_egress_rollback.sql
 -- Run in Supabase SQL Editor on PROD first, then STG.
 -- Goal: reduce anonymous data egress quickly while keeping core gameplay mostly operational.
 
