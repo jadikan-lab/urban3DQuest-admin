@@ -753,6 +753,7 @@ async function loadTreasureList(type,elId){var el=document.getElementById(elId);
       +'</div>'
       +'<div class="t-meta" style="margin-top:2px;display:flex;align-items:center;gap:5px;flex-wrap:wrap">'
       +questBadge
+      +'<span style="font-family:monospace;font-size:0.65rem;background:#1e293b;color:#94a3b8;padding:1px 5px;border-radius:4px;flex-shrink:0">'+escHtml(t.id)+'</span>'
       +'<span>'+Number(t.lat).toFixed(4)+', '+Number(t.lng).toFixed(4)+' · '+date+'</span>'
       +(found&&type!=='fixed'?'<span style="color:#4ade80">✓ '+escHtml(t.found_by)+'</span>':'')
       +'</div>'
