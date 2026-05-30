@@ -19,6 +19,7 @@ using (
   key in (
     'proximityRadius',
     'fixedTotal',
+    'questScanMaxGpsAccuracy',
     'modeMap',
     'modeCompass',
     'gameActive',

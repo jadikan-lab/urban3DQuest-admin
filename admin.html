@@ -272,6 +272,11 @@
     <input type="number" id="cfgFixedTotal" value="5" min="1" max="100">
     <div style="font-size:0.72rem;color:#475569;margin-top:4px">Utilisé pour la barre de progression du joueur (ex: 5 sur 5 balises fixes trouvées).</div>
   </div>
+  <div class="field">
+    <label>Seuil GPS max pour autoriser le scan Quête (±m)</label>
+    <input type="number" id="cfgQuestScanMaxGpsAccuracy" value="35" min="5" max="200">
+    <div style="font-size:0.72rem;color:#475569;margin-top:4px">Ex: 35 = scan bloqué si précision GPS est pire que ±35m.</div>
+  </div>
   <div class="toggle-row">
     <div class="toggle on" id="gameToggle" onclick="toggleGame()"></div>
     <span id="gameLabel">Jeu actif</span>
@@ -883,6 +888,7 @@ async function loadConfig(){
 
   if(cfg.proximityRadius)document.getElementById('cfgRadius').value=cfg.proximityRadius;
   if(cfg.fixedTotal)document.getElementById('cfgFixedTotal').value=cfg.fixedTotal;
+  if(cfg.questScanMaxGpsAccuracy)document.getElementById('cfgQuestScanMaxGpsAccuracy').value=cfg.questScanMaxGpsAccuracy;
 
   if(cfg.modeMap!==undefined){
     modeMap=cfg.modeMap!=='false';
@@ -964,6 +970,8 @@ async function saveConfig(){
 
   await db.from('config').upsert({key:'proximityRadius',value:document.getElementById('cfgRadius').value});
   await db.from('config').upsert({key:'fixedTotal',value:document.getElementById('cfgFixedTotal').value});
+  var qscanAcc=Math.max(5,Math.min(200,parseInt(document.getElementById('cfgQuestScanMaxGpsAccuracy').value,10)||35));
+  await db.from('config').upsert({key:'questScanMaxGpsAccuracy',value:String(qscanAcc)});
   await db.from('config').upsert({key:'modeMap',value:String(modeMap)});
   await db.from('config').upsert({key:'modeCompass',value:String(modeCompass)});
   await db.from('config').upsert({key:'gameActive',value:String(gameActive)});
