@@ -453,6 +453,7 @@
     <input type="text" id="qrNewObjet" placeholder="ex: statuette bleue, carte postale…" style="width:100%;box-sizing:border-box">
   </div>
   <button class="btn" onclick="generateQRCodes()">⚡ Générer</button>
+  <button class="btn" onclick="generateSoloQRCodes()" style="background:#7c2d12;border:1px solid #ea580c">🕶 Générer QR solo (N)</button>
   <button class="btn" id="zipPngBtn" style="background:#1e293b;border:1px solid #334155" onclick="downloadQrZip('png')" disabled>⬇ Télécharger ZIP PNG (400px · Photoshop)</button>
   <p style="font-size:0.72rem;color:#94a3b8;margin-top:6px">QR génériques: export PNG uniquement. Le SVG est réservé aux balises fixes (impression 3D).</p>
   <p id="qrInfo" style="font-size:0.75rem;color:#475569;margin-bottom:12px;display:none"></p>
@@ -737,6 +738,7 @@ async function loadTreasureList(type,elId){var el=document.getElementById(elId);
     var sh=(t.hint||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
     var hintHtml=t.hint?'<div class="t-hint" id="hint_'+t.id+'">💡 '+escHtml(t.hint)+'</div>':'<div class="t-hint t-hint-empty" id="hint_'+t.id+'"><em style="color:#334155">— pas d\'indice —</em></div>';
     var visFlag=!t.visible?(type==='unique'&&!t.activated_at?'<span class="badge b-hidden" style="font-size:0.55rem">brouillon flash</span><span class="badge b-hidden" style="font-size:0.55rem">non validé</span>':'<span class="badge b-hidden" style="font-size:0.55rem">masqué</span>'):'';
+    var soloFlag=t.solo_hidden?'<span class="badge" style="font-size:0.55rem;background:#7c2d12;color:#fdba74">solo caché</span>':'';
     var foundFlag=(found&&type!=='fixed')?'<span class="badge b-found" style="font-size:0.55rem">trouvé</span>':'';
     return'<div class="t-card">'
       +photoHtml
@@ -754,7 +756,7 @@ async function loadTreasureList(type,elId){var el=document.getElementById(elId);
       +'</div>'
       +'<div style="margin-top:5px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">'
       +'<span class="t-label" id="lbl_'+t.id+'" style="flex:1;min-width:0">'+escHtml(t.label||(t.type==='fixed'?'Balise fixe':'Trésor unique'))+'</span>'
-      +foundFlag+visFlag+fixedCountHtml
+      +foundFlag+visFlag+soloFlag+fixedCountHtml
       +'</div>'
       +'<div class="t-meta" style="margin-top:2px;display:flex;align-items:center;gap:5px;flex-wrap:wrap">'
       +questBadge
@@ -1418,6 +1420,114 @@ async function downloadFixedStlZip(){
   }
 }
 function listPlannedQrIds(prefix,start,count){var ids=[];for(var i=start;i<start+count;i++){ids.push(prefix+'-'+String(i).padStart(3,'0'));}return ids;}
+function _getSoloAnchorCoords(){
+  if(currentLoc&&Number.isFinite(currentLoc.lat)&&Number.isFinite(currentLoc.lng)){
+    return {lat:currentLoc.lat,lng:currentLoc.lng};
+  }
+  var cityEl=document.getElementById('cfgCity');
+  var cityVal=cityEl?String(cityEl.value||''):'48.8566,2.3522';
+  if(cityVal==='custom'){
+    var lat=parseFloat((document.getElementById('cfgLat')||{}).value||'');
+    var lng=parseFloat((document.getElementById('cfgLng')||{}).value||'');
+    if(Number.isFinite(lat)&&Number.isFinite(lng))return {lat:lat,lng:lng};
+  }
+  var parts=cityVal.split(',').map(function(x){return parseFloat(x);});
+  if(parts.length===2&&Number.isFinite(parts[0])&&Number.isFinite(parts[1]))return {lat:parts[0],lng:parts[1]};
+  return {lat:48.8566,lng:2.3522};
+}
+
+async function generateSoloQRCodes(){
+  var prefix=(document.getElementById('qrPrefix').value||'SOLO').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6);
+  if(!prefix){alert('Préfixe invalide.');return;}
+  var count=Math.min(parseInt(document.getElementById('qrCount').value)||20,150);
+  var start=parseInt(document.getElementById('qrStart').value)||1;
+  var quest=(document.getElementById('qrNewQuest')||{}).value||'';
+  var objet=(document.getElementById('qrNewObjet')||{}).value||'';
+  var planned=listPlannedQrIds(prefix,start,count);
+
+  var dbRes=await db.from('treasures').select('id').in('id',planned);
+  if(dbRes.error){alert('Erreur vérification base: '+dbRes.error.message);return;}
+  var dbUsed=new Set((dbRes.data||[]).map(function(r){return r.id;}));
+  var dbCollisions=planned.filter(function(id){return dbUsed.has(id);});
+  if(dbCollisions.length){alert('Collision en base: '+dbCollisions.slice(0,8).join(', ')+(dbCollisions.length>8?'...':'')+'\nChange le préfixe ou le numéro de départ.');return;}
+
+  var anchor=_getSoloAnchorCoords();
+  var nowIso=new Date().toISOString();
+  var rows=planned.map(function(id){
+    return {
+      id:id,
+      type:'unique',
+      lat:anchor.lat,
+      lng:anchor.lng,
+      placed_at:nowIso,
+      activated_at:nowIso,
+      label:(objet?objet+' ':'')+id,
+      hint:'QR solo hors carte',
+      visible:true,
+      photo_url:'',
+      found_by:'',
+      quest:quest||null,
+      solo_hidden:true
+    };
+  });
+
+  var insertRes=await db.from('treasures').insert(rows);
+  if(insertRes.error){
+    if(/solo_hidden/i.test(String(insertRes.error.message||''))){
+      alert('Colonne solo_hidden absente. Applique la migration SQL migration_add_solo_hidden_flag.sql puis réessaie.');
+      return;
+    }
+    alert('Erreur création QR solo: '+insertRes.error.message);
+    return;
+  }
+
+  var grid=document.getElementById('qrGrid');
+  var printGrid=document.getElementById('printGrid');
+  grid.innerHTML='';
+  printGrid.innerHTML='';
+  var generatedIds=JSON.parse(localStorage.getItem('u3dq_qr_generated')||'[]');
+  var meta=JSON.parse(localStorage.getItem('u3dq_qr_meta')||'{}');
+  var createdAt=new Date().toISOString();
+  var end=start+count-1;
+  var batchId='solo_'+prefix+'_'+String(start).padStart(3,'0')+'-'+String(end).padStart(3,'0')+'_'+Date.now();
+  setSelectedQrBatchId(batchId);
+
+  for(var i=start;i<start+count;i++){
+    var num=String(i).padStart(3,'0');
+    var id=prefix+'-'+num;
+    generatedIds.push(id);
+    meta[id]={quest:quest,objet:objet,prefix:prefix,batchId:batchId,createdAt:createdAt,soloHidden:true};
+    var url=buildGameUrl('found',id);
+    var sid='qrs_solo_'+i;
+    var pid='qrp_solo_'+i;
+    var qBadge=quest?'<span style="background:#1c3351;color:#7dd3fc;font-size:0.6rem;font-weight:600;padding:1px 5px;border-radius:6px;margin-left:3px">'+quest+'</span>':'';
+    var soloBadge='<span style="background:#7c2d12;color:#fdba74;font-size:0.6rem;font-weight:700;padding:1px 5px;border-radius:6px;margin-left:3px">SOLO</span>';
+    var oBadge=objet?'<div style="font-size:0.62rem;color:#94a3b8;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">&#128230; '+objet+'</div>':'';
+    var card=document.createElement('div');
+    card.className='qr-card';
+    card.innerHTML='<div class="qr-card-id" style="font-size:1.08rem;line-height:1.05">'+id+soloBadge+qBadge+'</div><div style="font-size:0.64rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#94a3b8;margin-top:2px">JADIKAN</div>'+oBadge+'<div style="background:#ffffff;padding:8px;border-radius:8px;display:inline-block"><div id="'+sid+'"></div></div>';
+    grid.appendChild(card);
+    new QRCode(document.getElementById(sid),{text:url,width:150,height:150,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.L});
+    var cell=document.createElement('div');
+    cell.className='print-cell';
+    cell.innerHTML='<div id="'+pid+'"></div><div class="print-label"><div class="print-label-code" style="font-size:8.2pt">'+id+'</div><div class="print-label-brand" style="font-size:4pt">JADIKAN SOLO</div></div>';
+    printGrid.appendChild(cell);
+    new QRCode(document.getElementById(pid),{text:url,width:150,height:150,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.L});
+  }
+
+  setLastQrBatch({id:batchId,quest:quest,prefix:prefix,start:start,end:end,count:count,objet:objet,createdAt:createdAt,ids:planned,soloHidden:true});
+  var info=document.getElementById('qrInfo');
+  info.textContent='Lot SOLO '+prefix+'-'+String(start).padStart(3,'0')+' → '+prefix+'-'+String(end).padStart(3,'0')+(quest?' · quête '+quest:'')+' · '+count+' QR solo cachés créés';
+  info.style.display='block';
+  document.getElementById('zipPngBtn').disabled=false;
+  localStorage.setItem('u3dq_qr_generated', JSON.stringify(generatedIds));
+  localStorage.setItem('u3dq_qr_meta', JSON.stringify(meta));
+  await syncQrCatalogCloud();
+  await renderQrBatchHistory();
+  await loadTreasureList('unique','uniqueList');
+  alert('QR solo créés: '+count+'\nIls sont hors carte (solo_hidden=true) et administrables dans la liste Flash.');
+}
+
 function slugifyQr(v){return String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,40)||'sans_quete';}
 function getLastQrBatch(){return JSON.parse(localStorage.getItem('u3dq_qr_last_batch')||'null');}
 function setLastQrBatch(b){localStorage.setItem('u3dq_qr_last_batch',JSON.stringify(b));}
