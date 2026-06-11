@@ -545,14 +545,11 @@ var SUPABASE_ENV=resolveSupabaseEnv();
 var SUPABASE_URL=SUPABASE_ENV.url;
 var SUPABASE_KEY=SUPABASE_ENV.key;
 var GAME_BASE_URL='https://www.urban3Dquest.fr';
-var SOLO_QR_BASE_URL='https://www.jadikan-lp.com/LandingGameArles/';
 // <SYNC:GAME_WEB_VERSION_START>
 var GAME_WEB_VERSION='a852a91'; // cache-busting for mobile scans — synced from urban3DQuest HEAD
 // <SYNC:GAME_WEB_VERSION_END>
-function buildGameUrl(param,value){if(param==='found'){try{var meta=JSON.parse(localStorage.getItem('u3dq_qr_meta')||'{}');if(meta&&meta[value]&&meta[value].soloHidden)return buildSoloQrUrl(value);}catch(e){}}return GAME_BASE_URL+'/?'+param+'='+value+'&v='+GAME_WEB_VERSION;}
+function buildGameUrl(param,value){return GAME_BASE_URL+'/?'+param+'='+value+'&v='+GAME_WEB_VERSION;}
 function buildGameUrlPrint(param,value){return GAME_BASE_URL+'/?'+param+'='+value;}
-function buildSoloQrUrl(value){return SOLO_QR_BASE_URL+'?found='+encodeURIComponent(value)+'&v='+GAME_WEB_VERSION;}
-function buildTreasureQrUrl(id,metaEntry){return metaEntry&&metaEntry.soloHidden?buildSoloQrUrl(id):buildGameUrl('found',id);}
 var ADMIN_UI_VERSION='v4';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,egressEmergency=false,realtimeEnabled=false,photoDataUrls=[],adminMap=null,mapLayers=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
@@ -1610,7 +1607,7 @@ async function generateSoloQRCodes(){
     var id=prefix+'-'+num;
     generatedIds.push(id);
     meta[id]={quest:quest,objet:objet,prefix:prefix,batchId:batchId,createdAt:createdAt,soloHidden:true};
-    var url=buildSoloQrUrl(id);
+    var url=buildGameUrl('found',id);
     var sid='qrs_solo_'+i;
     var pid='qrp_solo_'+i;
     var qBadge=quest?'<span style="background:#1c3351;color:#7dd3fc;font-size:0.6rem;font-weight:600;padding:1px 5px;border-radius:6px;margin-left:3px">'+quest+'</span>':'';
