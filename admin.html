@@ -215,17 +215,18 @@
     </select>
   </div>
   <div class="field">
-    <label>Type</label>
-    <div class="type-row">
-      <div class="type-btn" id="typeFixed" onclick="setType('fixed')">Fixe<br><small>Tout le monde peut flasher</small></div>
-      <div class="type-btn active" id="typeUnique" onclick="setType('unique')">Unique<br><small>Premier arrive seulement</small></div>
+    <label>Mode de pose</label>
+    <div id="addTypeTabs" style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="btn" id="addTabUnique" onclick="setType('unique')" style="flex:1;min-width:170px;background:#1d4ed8;border:1px solid #60a5fa">⚡ Pose Flash<br><small style="opacity:.9">pré-collés · smartphone</small></button>
+      <button type="button" class="btn" id="addTabFixed" onclick="setType('fixed')" style="flex:1;min-width:170px;background:#0f172a;border:1px solid #334155;color:#cbd5e1">📌 Pose Fixe<br><small style="opacity:.9">ID balise dédié</small></button>
     </div>
+    <div id="addTypeHint" style="font-size:0.72rem;color:#94a3b8;margin-top:6px">Mode Flash: utilise les QR pré-générés pour une pose terrain rapide.</div>
   </div>
   <div class="toggle-row" style="margin-top:14px">
     <div class="toggle" id="visToggle" onclick="toggleVis()"></div>
     <span id="visLabel">Visible par les joueurs</span>
   </div>
-  <div class="field">
+  <div class="field" id="qrPrecollField">
     <label>Numéro QR pré-collé</label>
     <select id="fQrSelect" onchange="onQrSelectChange()" style="margin-bottom:6px">
       <option value="">⏳ Chargement…</option>
@@ -1494,12 +1495,30 @@ async function generateFixedQRCodes(){
   document.getElementById('zipFixedStlBtn').disabled=true;
   grid.innerHTML='<p style="color:#475569;font-size:0.8rem">Chargement…</p>';
   info.style.display='none';
-  var questFilter=document.getElementById('filterQuestQr')?document.getElementById('filterQuestQr').value:'';
+  var questSel=document.getElementById('filterQuestQr');
+  var questFilter=questSel?questSel.value:'';
+  if(questFilter&&questSel){
+    var hasQuestOption=Array.prototype.some.call(questSel.options||[],function(opt){return opt.value===questFilter;});
+    if(!hasQuestOption){
+      questFilter='';
+      questSel.value='';
+    }
+  }
   var q=db.from('treasures').select('id,label,found_by').eq('type','fixed');
   if(questFilter)q=q.eq('quest',questFilter);
   var res=await q.order('placed_at',{ascending:true});
   if(res.error){grid.innerHTML='<p style="color:#f87171">'+res.error.message+'</p>';return;}
-  if(!res.data||!res.data.length){grid.innerHTML='<p style="color:#94a3b8;font-size:0.82rem;text-align:center;padding:16px">Aucune balise fixe enregistrée.</p>';return;}
+  if(!res.data||!res.data.length){
+    var totalFixed=0;
+    var cntRes=await db.from('treasures').select('id',{count:'exact',head:true}).eq('type','fixed');
+    if(!cntRes.error&&typeof cntRes.count==='number')totalFixed=cntRes.count;
+    if(questFilter&&totalFixed>0){
+      grid.innerHTML='<p style="color:#94a3b8;font-size:0.82rem;text-align:center;padding:16px">Aucune balise fixe pour la quête <strong>'+escHtml(questFilter)+'</strong>.<br>'+totalFixed+' balise(s) fixe(s) existent sur d\'autres quêtes.<br><button class="btn" style="margin-top:10px;background:#1e293b;border:1px solid #334155" onclick="document.getElementById(\'filterQuestQr\').value=\'\';generateFixedQRCodes()">Voir toutes les quêtes</button></p>';
+      return;
+    }
+    grid.innerHTML='<p style="color:#94a3b8;font-size:0.82rem;text-align:center;padding:16px">Aucune balise fixe enregistrée en base.</p>';
+    return;
+  }
   grid.innerHTML='';
   window._fixedQrData=res.data;
   res.data.forEach(function(t,idx){
@@ -2265,6 +2284,210 @@ function cancelEdit(id){
   if(lblEl)lblEl.style.display='';
   if(hintEl)hintEl.style.display='';
 }
+
+function _syncAddTypeUi(){
+  var isFixed=currentType==='fixed';
+  var tabUnique=document.getElementById('addTabUnique');
+  var tabFixed=document.getElementById('addTabFixed');
+  if(tabUnique){
+    tabUnique.style.background=isFixed?'#0f172a':'#1d4ed8';
+    tabUnique.style.borderColor=isFixed?'#334155':'#60a5fa';
+    tabUnique.style.color=isFixed?'#cbd5e1':'#ffffff';
+  }
+  if(tabFixed){
+    tabFixed.style.background=isFixed?'#166534':'#0f172a';
+    tabFixed.style.borderColor=isFixed?'#4ade80':'#334155';
+    tabFixed.style.color=isFixed?'#dcfce7':'#cbd5e1';
+  }
+  var typeFixed=document.getElementById('typeFixed');
+  var typeUnique=document.getElementById('typeUnique');
+  if(typeFixed)typeFixed.classList.toggle('active',isFixed);
+  if(typeUnique)typeUnique.classList.toggle('active',!isFixed);
+
+  var hint=document.getElementById('addTypeHint');
+  if(hint){
+    hint.textContent=isFixed
+      ?'Mode Fixe: QR dédié balise fixe (ID auto FIX-xxx), séparé du stock Flash.'
+      :'Mode Flash: utilise les QR pré-générés pour une pose terrain rapide.';
+  }
+
+  var qrField=document.getElementById('qrPrecollField')||((document.getElementById('fQrSelect')||{}).closest?document.getElementById('fQrSelect').closest('.field'):null);
+  if(qrField)qrField.style.opacity=isFixed?'0.65':'1';
+}
+
+async function _nextFixedTreasureId(){
+  var res=await db.from('treasures').select('id').eq('type','fixed');
+  if(res.error){
+    return 'FIX-'+Date.now().toString(36).toUpperCase();
+  }
+  var used=new Set((res.data||[]).map(function(t){return String(t.id||'').toUpperCase();}));
+  var maxNum=0;
+  used.forEach(function(id){
+    var m=id.match(/^FIX-(\d+)$/);
+    if(m){
+      var n=parseInt(m[1],10)||0;
+      if(n>maxNum)maxNum=n;
+    }
+  });
+  var next=maxNum+1;
+  var pad=Math.max(3,String(next).length);
+  var candidate='FIX-'+String(next).padStart(pad,'0');
+  while(used.has(candidate)){
+    next+=1;
+    candidate='FIX-'+String(next).padStart(pad,'0');
+  }
+  return candidate;
+}
+
+function setType(t){
+  currentType=t;
+  _syncAddTypeUi();
+  document.getElementById('visToggle').classList.toggle('on',visVisible);
+  document.getElementById('visLabel').textContent=visVisible?'Visible par les joueurs':'Masque aux joueurs';
+  loadQrLov();
+}
+
+function onQrSelectChange(){
+  var inp=document.getElementById('fQrNum');
+  if(currentType==='fixed'){
+    if(inp){inp.style.display='none';inp.value='';}
+    return;
+  }
+  var v=document.getElementById('fQrSelect').value;
+  if(v==='__manual__'){
+    inp.style.display='block';
+    inp.focus();
+  }else{
+    inp.style.display='none';
+    inp.value=v;
+  }
+}
+
+async function loadQrLov(){
+  var sel=document.getElementById('fQrSelect');
+  var info=document.getElementById('fQrInfo');
+  var inp=document.getElementById('fQrNum');
+  _syncAddTypeUi();
+
+  if(currentType==='fixed'){
+    sel.innerHTML='<option value="">(non utilisé en mode Fixe)</option>';
+    sel.disabled=true;
+    inp.style.display='none';
+    inp.value='';
+    info.textContent='En mode Fixe, un ID dédié FIX-xxx est généré automatiquement.';
+    info.style.color='#4ade80';
+    return;
+  }
+
+  sel.disabled=false;
+  var synced=await syncQrCatalogCloud();
+  var generated=synced.ids||[];
+  var metaLov=synced.meta||{};
+  sel.innerHTML='<option value="">— Aucun QR (ID auto) —</option>';
+  var manOpt=document.createElement('option');
+  manOpt.value='__manual__';
+  manOpt.textContent='✏️ Saisir manuellement';
+  sel.appendChild(manOpt);
+  if(!generated.length){
+    info.textContent='Aucun QR généré — allez dans l\'onglet QR pour en créer';
+    info.style.color='#fb923c';
+    return;
+  }
+
+  var res=await db.from('treasures').select('id');
+  var used=new Set((res.data||[]).map(function(t){return t.id;}));
+  var addQuest=(document.getElementById('fQuestSelect')||{}).value||'';
+  var selectedBatch=getSelectedQrBatchId();
+  function batchOf(id){
+    if(typeof _qrBatchOf==='function')return _qrBatchOf(metaLov,id);
+    var m=metaLov[id]||{};
+    return m.batchId||'';
+  }
+  var available=generated.filter(function(id){return !used.has(id);});
+  available.sort(function(a,b){
+    var am=metaLov[a]||{},bm=metaLov[b]||{};
+    var aBatch=(selectedBatch&&batchOf(a)===selectedBatch)?0:1;
+    var bBatch=(selectedBatch&&batchOf(b)===selectedBatch)?0:1;
+    if(aBatch!==bBatch)return aBatch-bBatch;
+    var aq=(addQuest&&(am.quest||'')===addQuest)?0:1;
+    var bq=(addQuest&&(bm.quest||'')===addQuest)?0:1;
+    if(aq!==bq)return aq-bq;
+    return String(a).localeCompare(String(b));
+  });
+  available.forEach(function(id,idx){
+    var opt=document.createElement('option');
+    opt.value=id;
+    var m=metaLov[id]||{};
+    var suffix=(m.quest?' ['+m.quest+']':' [legacy]')+(m.objet?' — '+m.objet:'')+(selectedBatch&&batchOf(id)===selectedBatch?' · [lot sélectionné]':'');
+    opt.textContent=(idx===0?'⬆ PROCHAIN : ':'')+id+suffix;
+    sel.appendChild(opt);
+  });
+  var total=generated.length;
+  var filterTxt=(selectedBatch?' (lot sélectionné prioritaire)':'')+(addQuest?' (triés pour la quête '+addQuest+')':'');
+  info.textContent=available.length+' QR disponibles sur '+total+' générés'+filterTxt+(available.length===0?' — tous déjà posés':'');
+  info.style.color=available.length===0?'#fb923c':'#475569';
+  if(available.length>0){
+    sel.value=available[0];
+    inp.style.display='none';
+  }
+}
+
+async function saveTreasure(){
+  var btn=document.getElementById('saveBtn');
+  var st=document.getElementById('stAdd');
+  var insertLoc=currentLoc;
+  if(!insertLoc&&currentType==='fixed')insertLoc=_getSoloAnchorCoords();
+  if(!insertLoc){showStatus(st,'err','GPS requis (ou ancre ville pour balise fixe)');return;}
+
+  var label=document.getElementById('fLabel').value.trim()||(currentType==='fixed'?'Balise fixe':'Trésor unique');
+  var hint=document.getElementById('fHint').value.trim();
+  var id='';
+  if(currentType==='fixed'){
+    id=await _nextFixedTreasureId();
+  }else{
+    var qrSel=document.getElementById('fQrSelect');
+    var qrNum=(qrSel.value&&qrSel.value!=='__manual__')?qrSel.value:document.getElementById('fQrNum').value.trim().toUpperCase().replace(/[^A-Z0-9\-]/g,'');
+    id=qrNum?qrNum:(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));
+  }
+
+  btn.disabled=true;
+  btn.textContent='Enregistrement...';
+  var uploadedUrls=[];
+  for(var pi=0;pi<photoDataUrls.length;pi++){
+    var dataUrl=photoDataUrls[pi];
+    var stored=await uploadPhotoDataUrl(dataUrl,'treasure');
+    if(!stored){
+      showStatus(st,'err','❌ Erreur upload photo — vérifie que le bucket "photos" existe dans Supabase '+SUPABASE_ENV.label+'.');
+      btn.disabled=false;
+      btn.textContent='Enregistrer le tresor';
+      return;
+    }
+    uploadedUrls.push(stored);
+  }
+  var photoUrl=uploadedUrls.length===0?'':(uploadedUrls.length===1?uploadedUrls[0]:JSON.stringify(uploadedUrls));
+  var initialVisible=visVisible;
+  var activatedAt=(currentType==='unique'&&initialVisible)?new Date().toISOString():null;
+  var res=await db.from('treasures').insert({id:id,type:currentType,lat:insertLoc.lat,lng:insertLoc.lng,placed_at:new Date().toISOString(),activated_at:activatedAt,label:label,hint:hint,visible:initialVisible,photo_url:photoUrl,found_by:''});
+
+  var questVal=document.getElementById('fQuestSelect').value||'';
+  if(!res.error&&questVal){await db.from('treasures').update({quest:questVal}).eq('id',id);}
+  btn.disabled=false;
+  btn.textContent='Enregistrer le tresor';
+  if(res.error){showStatus(st,'err','Erreur: '+res.error.message);return;}
+
+  showStatus(st,'ok',currentType==='unique'?(initialVisible?(label+' enregistré et visible immédiatement pour les joueurs.'):(label+' enregistré en brouillon Flash.')):(label+' enregistre'+(uploadedUrls.length?' avec '+uploadedUrls.length+' photo(s)':'' )+'!'));
+  showQR(id,label,currentType);
+  document.getElementById('fLabel').value='';
+  document.getElementById('fHint').value='';
+  document.getElementById('fQrNum').value='';
+  document.getElementById('fQrSelect').value='';
+  document.getElementById('fQrNum').style.display='none';
+  document.getElementById('photoInput').value='';
+  photoDataUrls=[];
+  renderPhotoStrip();
+  loadQrLov();
+}
+
 function showQR(id,label,type){var url=(type==='fixed'?buildLandingFoundUrl(id):buildGameUrl('found',id));document.getElementById('qrLabel').textContent=label||'Tresor';document.getElementById('qrId').textContent=(type==='fixed'?'📌 ':'🎁 ')+id;document.getElementById('qrUrl').textContent=url;var wrap=document.getElementById('qrWrap');wrap.innerHTML='';new QRCode(wrap,{text:url,width:200,height:200,colorDark:'#000000',colorLight:'#ffffff'});document.getElementById('qrModal').classList.add('open');}
 function closeQR(){document.getElementById('qrModal').classList.remove('open');}
 function showStatus(el,type,msg){el.className='status '+type;el.textContent=msg;setTimeout(function(){el.className='status';},4000);}
