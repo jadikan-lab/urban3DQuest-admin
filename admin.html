@@ -928,9 +928,16 @@ async function loadSoloList(){
   var html=rows.map(function(t){
     var foundByTxt=String(t.found_by||'').trim();
     var found=!!(foundByTxt||t.found_at);
-    var foundBy=found?(foundByTxt?escHtml(foundByTxt):'inconnu'):'-';
+    var foundByClean=foundByTxt;
+    var foundCountFromBy=0;
+    var byMatch=foundByTxt.match(/^(.*)#(\d+)$/);
+    if(byMatch){
+      foundByClean=(byMatch[1]||'').trim()||'AUTRE';
+      foundCountFromBy=Math.max(0,parseInt(byMatch[2],10)||0);
+    }
+    var foundBy=found?(foundByClean?escHtml(foundByClean):'inconnu'):'-';
     var count=flashCountById[t.id]||0;
-    if(count===0&&found)count=1;
+    if(count===0&&found)count=foundCountFromBy||1;
     var countClass=count===0?'zero':(count<3?'low':'high');
     var questTxt=t.quest?escHtml(t.quest):'Sans quete';
     return '<div class="solo-card'+(found?' found':'')+'">'
