@@ -1565,12 +1565,15 @@ async function downloadFixedQrZip(format){
       var t=data[idx];
       var url=buildLandingFoundUrl(t.id);
       var name=(t.label||('B'+(idx+1)));  // nom court uniquement, ex: B1
+      var idTag=String(t.id||('IDX'+(idx+1))).toUpperCase();
       var exportLabel=(fmt==='svg')?'':name.substring(0,30);
       var payload=buildQrAsset(url,exportLabel,QRCode.CorrectLevel.M,fmt,{outSize:OUT_SZ,qrSize:QR_SZ,quiet:QUIET,bottomPad:PAD});
       if(payload){
+        var safeId=idTag.replace(/[^a-zA-Z0-9\-_]/g,'_').substring(0,40)||('IDX'+(idx+1));
         var safeName=name.replace(/[^a-zA-Z0-9\-_]/g,'_').substring(0,40);
         var ext=(fmt==='svg')?'svg':'png';
-        zip.file('balise_'+safeName+'.'+ext,payload,fmt==='svg'?{}:{base64:true});
+        var fileName='balise_'+safeId+(safeName?('_'+safeName):'')+'.'+ext;
+        zip.file(fileName,payload,fmt==='svg'?{}:{base64:true});
       }
       setProgress(((idx+1)/data.length)*88,'Génération fichiers '+(idx+1)+'/'+data.length+'…');
       if((idx%4)===0)await new Promise(function(resolve){requestAnimationFrame(resolve);});
@@ -1611,11 +1614,14 @@ async function downloadFixedStlZip(){
       var t=data[idx];
       var url=buildLandingFoundUrl(t.id);
       var name=(t.label||('B'+(idx+1)));
+      var idTag=String(t.id||('IDX'+(idx+1))).toUpperCase();
       var modules=getQrModulesForUrl(url,QRCode.CorrectLevel.M);
       validateQrModuleMatrix(modules);
       var stl=buildQrStlFromModules(modules,name,{quietModules:5,targetSizeMm:70,baseHeightMm:0.6,reliefHeightMm:0.6});
+      var safeId=idTag.replace(/[^a-zA-Z0-9\-_]/g,'_').substring(0,40)||('IDX'+(idx+1));
       var safeName=name.replace(/[^a-zA-Z0-9\-_]/g,'_').substring(0,40);
-      zip.file('balise_'+safeName+'.stl',stl);
+      var stlName='balise_'+safeId+(safeName?('_'+safeName):'')+'.stl';
+      zip.file(stlName,stl);
       setProgress(((idx+1)/data.length)*88,'Génération STL '+(idx+1)+'/'+data.length+'…');
       if((idx%3)===0)await new Promise(function(resolve){requestAnimationFrame(resolve);});
     }
