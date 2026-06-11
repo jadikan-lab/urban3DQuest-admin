@@ -443,7 +443,7 @@
   <!-- ── Section balises fixes ── -->
   <div style="background:#0f2213;border:1px solid #166534;border-radius:12px;padding:14px;margin-bottom:18px">
     <div style="font-weight:700;color:#4ade80;font-size:0.9rem;margin-bottom:10px">📌 QR codes — Balises fixes</div>
-    <p style="font-size:0.78rem;color:#94a3b8;margin-bottom:10px">Génère un QR unique (<code>?checkin=&lt;id&gt;</code>) pour chaque balise fixe enregistrée en base. À imprimer avant de poser les balises.</p>
+    <p style="font-size:0.78rem;color:#94a3b8;margin-bottom:10px">Génère un QR unique (<code>?found=&lt;id&gt;</code>) pour chaque balise fixe enregistrée en base. À imprimer pour scan via la landing.</p>
     <select id="filterQuestQr" style="width:100%;padding:8px 12px;background:#1e293b;border:1px solid #334155;border-radius:9px;color:#f1f5f9;font-size:0.82rem;margin-bottom:10px">
       <option value="">Toutes les quêtes</option>
     </select>
@@ -577,6 +577,7 @@ var GAME_WEB_VERSION='a852a91'; // cache-busting for mobile scans — synced fro
 function buildGameUrl(param,value){return GAME_BASE_URL+'/?'+param+'='+value+'&v='+GAME_WEB_VERSION;}
 function buildGameUrlPrint(param,value){return GAME_BASE_URL+'/?'+param+'='+value;}
 function buildSoloLandingUrl(value){return SOLO_LANDING_BASE_URL+'?found='+encodeURIComponent(value);}
+function buildLandingFoundUrl(value){return SOLO_LANDING_BASE_URL+'?found='+encodeURIComponent(value);}
 function buildFoundQrUrl(id,meta){
   var m=meta||{};
   var sid=String(id||'').toUpperCase();
@@ -833,7 +834,7 @@ function renderPhotoStrip(){var s=document.getElementById('photoStrip');s.innerH
 function getPhotoUrls(raw){if(!raw)return[];if(raw.charAt(0)==='['){try{return JSON.parse(raw).filter(Boolean);}catch(e){}}return[raw];}
 function setType(t){currentType=t;document.getElementById('typeFixed').classList.toggle('active',t==='fixed');document.getElementById('typeUnique').classList.toggle('active',t==='unique');document.getElementById('visToggle').classList.toggle('on',visVisible);document.getElementById('visLabel').textContent=visVisible?'Visible par les joueurs':'Masque aux joueurs';}
 function toggleVis(){visVisible=!visVisible;document.getElementById('visToggle').classList.toggle('on',visVisible);document.getElementById('visLabel').textContent=visVisible?'Visible par les joueurs':'Masque aux joueurs';}
-async function saveTreasure(){var btn=document.getElementById('saveBtn');var st=document.getElementById('stAdd');if(!currentLoc){showStatus(st,'err','GPS requis');return;}var label=document.getElementById('fLabel').value.trim()||(currentType==='fixed'?'Balise fixe':'Trésor unique');var hint=document.getElementById('fHint').value.trim();var qrSel=document.getElementById('fQrSelect');var qrNum=(qrSel.value&&qrSel.value!=='__manual__')?qrSel.value:document.getElementById('fQrNum').value.trim().toUpperCase().replace(/[^A-Z0-9\-]/g,'');btn.disabled=true;btn.textContent='Enregistrement...';var id=qrNum?qrNum:(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));var uploadedUrls=[];for(var pi=0;pi<photoDataUrls.length;pi++){var dataUrl=photoDataUrls[pi];var stored=await uploadPhotoDataUrl(dataUrl,'treasure');if(!stored){showStatus(st,'err','❌ Erreur upload photo — vérifie que le bucket "photos" existe dans Supabase '+SUPABASE_ENV.label+'.');btn.disabled=false;btn.textContent='Enregistrer le tresor';return;}uploadedUrls.push(stored);}var photoUrl=uploadedUrls.length===0?'':(uploadedUrls.length===1?uploadedUrls[0]:JSON.stringify(uploadedUrls));var initialVisible=visVisible;var activatedAt=(currentType==='unique'&&initialVisible)?new Date().toISOString():null;var res=await db.from('treasures').insert({id:id,type:currentType,lat:currentLoc.lat,lng:currentLoc.lng,placed_at:new Date().toISOString(),activated_at:activatedAt,label:label,hint:hint,visible:initialVisible,photo_url:photoUrl,found_by:''});
+async function saveTreasure(){var btn=document.getElementById('saveBtn');var st=document.getElementById('stAdd');var insertLoc=currentLoc;if(!insertLoc&&currentType==='fixed')insertLoc=_getSoloAnchorCoords();if(!insertLoc){showStatus(st,'err','GPS requis (ou ancre ville pour balise fixe)');return;}var label=document.getElementById('fLabel').value.trim()||(currentType==='fixed'?'Balise fixe':'Trésor unique');var hint=document.getElementById('fHint').value.trim();var qrSel=document.getElementById('fQrSelect');var qrNum=(qrSel.value&&qrSel.value!=='__manual__')?qrSel.value:document.getElementById('fQrNum').value.trim().toUpperCase().replace(/[^A-Z0-9\-]/g,'');btn.disabled=true;btn.textContent='Enregistrement...';var id=qrNum?qrNum:(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));var uploadedUrls=[];for(var pi=0;pi<photoDataUrls.length;pi++){var dataUrl=photoDataUrls[pi];var stored=await uploadPhotoDataUrl(dataUrl,'treasure');if(!stored){showStatus(st,'err','❌ Erreur upload photo — vérifie que le bucket "photos" existe dans Supabase '+SUPABASE_ENV.label+'.');btn.disabled=false;btn.textContent='Enregistrer le tresor';return;}uploadedUrls.push(stored);}var photoUrl=uploadedUrls.length===0?'':(uploadedUrls.length===1?uploadedUrls[0]:JSON.stringify(uploadedUrls));var initialVisible=visVisible;var activatedAt=(currentType==='unique'&&initialVisible)?new Date().toISOString():null;var res=await db.from('treasures').insert({id:id,type:currentType,lat:insertLoc.lat,lng:insertLoc.lng,placed_at:new Date().toISOString(),activated_at:activatedAt,label:label,hint:hint,visible:initialVisible,photo_url:photoUrl,found_by:''});
   // quest dans un update séparé pour éviter l'erreur cache PostgREST "column not found"
   var questVal=document.getElementById('fQuestSelect').value||'';
   if(!res.error&&questVal){await db.from('treasures').update({quest:questVal}).eq('id',id);}
@@ -841,8 +842,13 @@ async function saveTreasure(){var btn=document.getElementById('saveBtn');var st=
 async function loadTreasureList(type,elId){var el=document.getElementById(elId);el.innerHTML='<p style="color:#475569;text-align:center;padding:40px">Chargement</p>';var filterId=type==='fixed'?'filterQuestFixed':'filterQuestUnique';var questFilter=document.getElementById(filterId)?document.getElementById(filterId).value:'';var q=db.from('treasures').select('*').eq('type',type);if(type==='unique')q=q.eq('solo_hidden',false);if(questFilter)q=q.eq('quest',questFilter);var res=await q.order('placed_at',{ascending:false});if(res.error){el.innerHTML='<p style="color:#f87171;padding:16px">'+escHtml(res.error.message)+'</p>';return;}if(!res.data.length){el.innerHTML='<p style="color:#475569;text-align:center;padding:40px">Aucun trésor'+(questFilter?' pour cette quête':'')+' pour l\'instant</p>';return;}var cards=res.data.map(function(t){var found=t.found_by&&t.found_by.length>0;var date=new Date(t.placed_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});var sl=(t.label||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');var photos=getPhotoUrls(t.photo_url);var safePhoto=safeImgUrl(photos[0]||'');// Photo pleine largeur
   var photoHtml=safePhoto?'<img src="'+escHtml(safePhoto)+'" style="width:100%;height:80px;object-fit:cover;border-radius:7px;margin-bottom:6px;display:block" loading="lazy">':'';
   var questBadge=t.quest?'<span data-quest-badge="" style="background:#1c3351;color:#7dd3fc;font-size:0.6rem;font-weight:600;padding:2px 5px;border-radius:7px">'+escHtml(t.quest)+'</span>':'';
-    // Compteur joueurs pour balises fixes (trouvées par plusieurs)
-    var fixedFoundCount=t.type==='fixed'&&t.found_by?t.found_by.split(',').filter(Boolean).length:0;
+    // Compteur scans pour balises fixes: AUTRE#N (nouveau) ou CSV legacy.
+    var fixedFoundCount=0;
+    if(t.type==='fixed'&&t.found_by){
+      var by=String(t.found_by||'').trim();
+      var m=by.match(/#(\d+)$/);
+      fixedFoundCount=m?Math.max(0,parseInt(m[1],10)||0):by.split(',').filter(Boolean).length;
+    }
     var fixedCountHtml=fixedFoundCount?'<span style="color:#4ade80;font-size:0.65rem;font-weight:700">👥 '+fixedFoundCount+'</span>':'';
     var sh=(t.hint||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
     var hintHtml=t.hint?'<div class="t-hint" id="hint_'+t.id+'">💡 '+escHtml(t.hint)+'</div>':'<div class="t-hint t-hint-empty" id="hint_'+t.id+'"><em style="color:#334155">— pas d\'indice —</em></div>';
@@ -1500,7 +1506,7 @@ async function generateFixedQRCodes(){
     // Nom court : label de la balise (ex: B1, B2…) — jamais en rouge car fixe = plusieurs joueurs
     var name=(t.label||('B'+(idx+1))).substring(0,20);
     var sid='fqrs_'+t.id.replace(/[^a-z0-9]/gi,'_');
-    var url=buildGameUrlPrint('checkin',encodeURIComponent(t.id));
+    var url=buildLandingFoundUrl(t.id);
     var card=document.createElement('div');
     card.className='qr-card';
     card.style.border='2px solid #166534';
@@ -1538,7 +1544,7 @@ async function downloadFixedQrZip(format){
     var OUT_SZ=400;var QR_SZ=352;var QUIET=24;var PAD=72;
     for(var idx=0;idx<data.length;idx++){
       var t=data[idx];
-      var url=buildGameUrlPrint('checkin',encodeURIComponent(t.id));
+      var url=buildLandingFoundUrl(t.id);
       var name=(t.label||('B'+(idx+1)));  // nom court uniquement, ex: B1
       var exportLabel=(fmt==='svg')?'':name.substring(0,30);
       var payload=buildQrAsset(url,exportLabel,QRCode.CorrectLevel.M,fmt,{outSize:OUT_SZ,qrSize:QR_SZ,quiet:QUIET,bottomPad:PAD});
@@ -1584,7 +1590,7 @@ async function downloadFixedStlZip(){
     var zip=new JSZip();
     for(var idx=0;idx<data.length;idx++){
       var t=data[idx];
-      var url=buildGameUrlPrint('checkin',encodeURIComponent(t.id));
+      var url=buildLandingFoundUrl(t.id);
       var name=(t.label||('B'+(idx+1)));
       var modules=getQrModulesForUrl(url,QRCode.CorrectLevel.M);
       validateQrModuleMatrix(modules);
@@ -2259,7 +2265,7 @@ function cancelEdit(id){
   if(lblEl)lblEl.style.display='';
   if(hintEl)hintEl.style.display='';
 }
-function showQR(id,label,type){var url=buildGameUrl(type==='fixed'?'checkin':'found',id);document.getElementById('qrLabel').textContent=label||'Tresor';document.getElementById('qrId').textContent=(type==='fixed'?'📌 ':'🎁 ')+id;document.getElementById('qrUrl').textContent=url;var wrap=document.getElementById('qrWrap');wrap.innerHTML='';new QRCode(wrap,{text:url,width:200,height:200,colorDark:'#000000',colorLight:'#ffffff'});document.getElementById('qrModal').classList.add('open');}
+function showQR(id,label,type){var url=(type==='fixed'?buildLandingFoundUrl(id):buildGameUrl('found',id));document.getElementById('qrLabel').textContent=label||'Tresor';document.getElementById('qrId').textContent=(type==='fixed'?'📌 ':'🎁 ')+id;document.getElementById('qrUrl').textContent=url;var wrap=document.getElementById('qrWrap');wrap.innerHTML='';new QRCode(wrap,{text:url,width:200,height:200,colorDark:'#000000',colorLight:'#ffffff'});document.getElementById('qrModal').classList.add('open');}
 function closeQR(){document.getElementById('qrModal').classList.remove('open');}
 function showStatus(el,type,msg){el.className='status '+type;el.textContent=msg;setTimeout(function(){el.className='status';},4000);}
 </script>
