@@ -238,6 +238,16 @@
 <div id="panelSolo" class="panel">
   <div id="stSolo" class="status"></div>
   <p style="font-size:0.75rem;color:#94a3b8;margin:-2px 0 10px">Liste dédiée des QR solo hors carte (<code>solo_hidden=true</code>). Coche = déjà flashé.</p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+    <select id="filterQuestSolo" onchange="loadSoloList()" style="font-size:0.82rem;min-width:180px">
+      <option value="">Toutes les quêtes</option>
+    </select>
+    <select id="sortSolo" onchange="loadSoloList()" style="font-size:0.82rem;min-width:180px">
+      <option value="date_desc">Tri: plus récent d'abord</option>
+      <option value="quest_asc">Tri: quête (A→Z)</option>
+      <option value="quest_desc">Tri: quête (Z→A)</option>
+    </select>
+  </div>
   <button class="btn" onclick="loadSoloList()" style="background:#1e293b;border:1px solid #334155">↻ Actualiser la liste Solo</button>
   <div id="soloList"><p class="loading-text">Chargement</p></div>
 </div>
@@ -839,6 +849,24 @@ async function loadTreasureList(type,elId){var el=document.getElementById(elId);
       +(found&&type!=='fixed'?'<span style="color:#4ade80">✓ '+escHtml(t.found_by)+'</span>':'')
       +'</div>'
       +'</div>';}).join('');el.innerHTML='<div class="t-grid">'+cards+'</div>';}
+function _syncSoloQuestFilter(rows){
+  var sel=document.getElementById('filterQuestSolo');
+  if(!sel)return '';
+  var prev=sel.value||'';
+  var quests=[];
+  var seen={};
+  (rows||[]).forEach(function(t){
+    var q=String(t.quest||'').trim();
+    if(!q||seen[q])return;
+    seen[q]=1;
+    quests.push(q);
+  });
+  quests.sort(function(a,b){return a.localeCompare(b,'fr',{sensitivity:'base'});});
+  sel.innerHTML='<option value="">Toutes les quêtes</option>'
+    +quests.map(function(q){return '<option value="'+escHtml(q)+'">'+escHtml(q)+'</option>';}).join('');
+  if(prev&&quests.indexOf(prev)!==-1)sel.value=prev;
+  return sel.value||'';
+}
 async function loadSoloList(){
   var el=document.getElementById('soloList');
   if(!el)return;
@@ -846,10 +874,24 @@ async function loadSoloList(){
   var res=await db.from('treasures').select('id,label,found_by,found_at,placed_at,quest,visible').eq('type','unique').eq('solo_hidden',true).order('placed_at',{ascending:false});
   if(res.error){el.innerHTML='<p style="color:#f87171;padding:16px">'+escHtml(res.error.message)+'</p>';return;}
   var rows=res.data||[];
+  var questFilter=_syncSoloQuestFilter(rows);
+  if(questFilter)rows=rows.filter(function(t){return String(t.quest||'').trim()===questFilter;});
+  var sortMode=((document.getElementById('sortSolo')||{}).value)||'date_desc';
+  rows.sort(function(a,b){
+    if(sortMode==='date_desc'){
+      return String(b.placed_at||'').localeCompare(String(a.placed_at||''));
+    }
+    var qa=String(a.quest||'').trim().toLowerCase();
+    var qb=String(b.quest||'').trim().toLowerCase();
+    var qcmp=qa.localeCompare(qb,'fr',{sensitivity:'base'});
+    if(qcmp!==0)return sortMode==='quest_desc'?-qcmp:qcmp;
+    return String(b.placed_at||'').localeCompare(String(a.placed_at||''));
+  });
   if(!rows.length){el.innerHTML='<p style="color:#475569;text-align:center;padding:40px">Aucun QR solo pour le moment.</p>';return;}
   var html=rows.map(function(t){
-    var found=!!(t.found_by&&String(t.found_by).trim());
-    var foundBy=found?escHtml(t.found_by):'—';
+    var foundByTxt=String(t.found_by||'').trim();
+    var found=!!(foundByTxt||t.found_at);
+    var foundBy=found?(foundByTxt?escHtml(foundByTxt):'inconnu'):'—';
     var dateTxt=t.placed_at?new Date(t.placed_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'—';
     var quest=t.quest?'<span style="background:#1c3351;color:#7dd3fc;font-size:0.6rem;font-weight:600;padding:2px 5px;border-radius:7px">'+escHtml(t.quest)+'</span>':'';
     var check=found?'☑':'☐';
@@ -1559,7 +1601,40 @@ async function generateSoloQRCodes(){
   if(dbRes.error){alert('Erreur vérification base: '+dbRes.error.message);return;}
   var dbUsed=new Set((dbRes.data||[]).map(function(r){return r.id;}));
   var dbCollisions=planned.filter(function(id){return dbUsed.has(id);});
-  if(dbCollisions.length){alert('Collision en base: '+dbCollisions.slice(0,8).join(', ')+(dbCollisions.length>8?'...':'')+'\nChange le préfixe ou le numéro de départ.');return;}
+  if(dbCollisions.length){
+    var detailRes=await db.from('treasures').select('id,solo_hidden,found_by').in('id',dbCollisions);
+    if(detailRes.error){alert('Erreur lecture collisions: '+detailRes.error.message);return;}
+    var detailRows=detailRes.data||[];
+    var nonSolo=detailRows.filter(function(r){return !r.solo_hidden;}).map(function(r){return r.id;});
+    if(nonSolo.length){
+      alert('Collision en base avec des QR non-solo: '+nonSolo.slice(0,8).join(', ')+(nonSolo.length>8?'...':'')+'\nChange le préfixe ou le numéro de départ.');
+      return;
+    }
+
+    var foundCount=detailRows.filter(function(r){return !!String(r.found_by||'').trim();}).length;
+    var confirmMsg='Collision en base détectée sur '+dbCollisions.length+' QR solo.\n\n'
+      +'- IDs: '+dbCollisions.slice(0,8).join(', ')+(dbCollisions.length>8?'...':'')+'\n'
+      +'- Déjà flashés: '+foundCount+'\n\n'
+      +'Voulez-vous supprimer ces anciennes entrées solo (treasures + events) puis recréer le lot ?';
+    if(!confirm(confirmMsg)){
+      alert('Création annulée.');
+      return;
+    }
+
+    var delEvents=await db.from('events').delete().in('treasure_id',dbCollisions);
+    if(delEvents.error){alert('Erreur suppression événements collisions: '+delEvents.error.message);return;}
+    var delTres=await db.from('treasures').delete().in('id',dbCollisions).eq('solo_hidden',true);
+    if(delTres.error){alert('Erreur suppression trésors collisions: '+delTres.error.message);return;}
+
+    // Clean local/shared catalog for recycled IDs to avoid stale batch state.
+    var gIds=_uniqQrIds(JSON.parse(localStorage.getItem('u3dq_qr_generated')||'[]'));
+    var gMeta=JSON.parse(localStorage.getItem('u3dq_qr_meta')||'{}');
+    var keptIds=gIds.filter(function(id){return dbCollisions.indexOf(id)===-1;});
+    dbCollisions.forEach(function(id){delete gMeta[id];});
+    localStorage.setItem('u3dq_qr_generated',JSON.stringify(keptIds));
+    localStorage.setItem('u3dq_qr_meta',JSON.stringify(gMeta));
+    await _writeSharedQrCatalog(keptIds,gMeta);
+  }
 
   var anchor=_getSoloAnchorCoords();
   var nowIso=new Date().toISOString();
@@ -1821,7 +1896,7 @@ async function renderQrBatchHistory(syncedData){
         +'<div style="font-size:0.7rem;color:#94a3b8">Plage '+escHtml(_formatQrBatchRange(g.ids))+' · Qté '+total+' · Restants '+remaining+' · Utilisés '+usedCount+'</div>'
         +'</div>'
         +'<div style="display:flex;flex-direction:column;gap:5px">'
-        +'<button onclick="selectQrBatchForLov(\''+batchEsc+'\')" style="padding:6px 8px;background:'+(active?'#1d4ed8':'#1e293b')+';border:1px solid '+(active?'#60a5fa':'#334155')+';border-radius:7px;color:'+(active?'#dbeafe':'#cbd5e1')+';font-size:0.68rem;cursor:pointer;white-space:nowrap">'+(active?'Lot actif':'Utiliser ce lot')+'</button>'
+        +'<button onclick="selectQrBatchForLov(\''+batchEsc+'\')" style="padding:6px 8px;background:'+(active?'#1d4ed8':'#1e293b')+';border:1px solid '+(active?'#60a5fa':'#334155')+';border-radius:7px;color:'+(active?'#dbeafe':'#cbd5e1')+';font-size:0.68rem;cursor:pointer;white-space:nowrap">'+(active?'Lot sélectionné':'Sélectionner ce lot')+'</button>'
         +'<button onclick="previewQrBatch(\''+batchEsc+'\')" style="padding:6px 8px;background:'+(opened?'#0f766e':'#1e293b')+';border:1px solid '+(opened?'#14b8a6':'#334155')+';border-radius:7px;color:'+(opened?'#ccfbf1':'#cbd5e1')+';font-size:0.68rem;cursor:pointer;white-space:nowrap">'+(opened?'QR affichés':'Voir les QR')+'</button>'
         +'<button onclick="exportQrBatch(\''+batchEsc+'\')" style="padding:6px 8px;background:#1e293b;border:1px solid #334155;border-radius:7px;color:#cbd5e1;font-size:0.68rem;cursor:pointer;white-space:nowrap">Export PNG</button>'
         +'<button onclick="deleteQrBatch(\''+batchEsc+'\')" style="padding:6px 8px;background:#7c2d12;border:1px solid #ea580c;border-radius:7px;color:#ffedd5;font-size:0.68rem;cursor:pointer;white-space:nowrap">Supprimer lot (total)</button>'
@@ -1985,7 +2060,7 @@ function onQrQuestChange(){
   prefixEl.value=sug||'QR';
 }
 async function restoreQrGrid(){
-  renderEnvQRCodes();var synced=await syncQrCatalogCloud();var ids=synced.ids||[];var meta=synced.meta||{};var grid=document.getElementById('qrGrid');grid.innerHTML='';if(!ids.length){document.getElementById('qrInfo').style.display='none';document.getElementById('zipPngBtn').disabled=true;await renderQrBatchHistory(synced);return;}var selectedBatch=getSelectedQrBatchId();if(!selectedBatch){selectedBatch=_pickDefaultQrBatchId(ids,meta);if(selectedBatch)setSelectedQrBatchId(selectedBatch);}var displayIds=selectedBatch?ids.filter(function(id){return _qrBatchOf(meta,id)===selectedBatch;}):ids.slice();if(!displayIds.length)displayIds=ids.slice();var res=await db.from('treasures').select('id,found_by');var tMap={};(res.data||[]).forEach(function(t){tMap[t.id]=t.found_by;});displayIds.forEach(function(id){var sid='qrs_r_'+id.replace(/[^a-z0-9]/gi,'_');var placed=id in tMap;var found=placed&&tMap[id]&&tMap[id].length>0;var borderColor=found?'#f97316':placed?'#4ade80':'transparent';var labelColor=found?'#f97316':placed?'#4ade80':'#93c5fd';var badge=found?' 🎯':placed?' ✓':'';var m=meta[id]||{};var qBadge=m.quest?'<span style="background:#1c3351;color:#7dd3fc;font-size:0.6rem;font-weight:600;padding:1px 5px;border-radius:6px;margin-left:3px">'+m.quest+'</span>':'';var oBadge=m.objet?'<div style="font-size:0.62rem;color:#94a3b8;margin-top:2px">&#128230; '+m.objet+'</div>':'';var card=document.createElement('div');card.className='qr-card';card.id='qrc_'+id.replace(/[^a-z0-9]/gi,'_');card.style.opacity=found?'0.35':placed?'0.55':'1';card.style.border='2px solid '+borderColor;card.style.borderRadius='10px';card.style.position='relative';card.innerHTML='<div class="qr-card-id" style="color:'+labelColor+';font-size:1.08rem;line-height:1.05">'+id+badge+qBadge+'</div><div style="font-size:0.64rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#94a3b8;margin-top:2px">JADIKAN</div>'+oBadge+'<div style="background:#ffffff;padding:8px;border-radius:8px;display:inline-block"><div id="'+sid+'"></div></div>'+'<button onclick="editQrMeta(\''+id+'\')" style="margin-top:4px;width:100%;padding:3px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#94a3b8;font-size:0.65rem;cursor:pointer">&#9999;&#65039; Modifier</button>';grid.appendChild(card);var url=buildGameUrl('found',id);new QRCode(document.getElementById(sid),{text:url,width:150,height:150,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.L});});var total=ids.length;var placedCount=ids.filter(function(id){return id in tMap;}).length;var foundCount=ids.filter(function(id){return tMap[id]&&tMap[id].length>0;}).length;var info=document.getElementById('qrInfo');var lotTxt=selectedBatch?(' · affichage lot actif ('+displayIds.length+' codes)'):'';info.innerHTML=total+' codes — <span style="color:#4ade80">'+placedCount+' posés ✓</span>, <span style="color:#f97316">'+foundCount+' trouvés 🎯</span>, '+(total-placedCount)+' disponibles'+lotTxt;info.style.display='block';document.getElementById('zipPngBtn').disabled=false;await renderQrBatchHistory(synced);}
+  renderEnvQRCodes();var synced=await syncQrCatalogCloud();var ids=synced.ids||[];var meta=synced.meta||{};var grid=document.getElementById('qrGrid');grid.innerHTML='';if(!ids.length){document.getElementById('qrInfo').style.display='none';document.getElementById('zipPngBtn').disabled=true;await renderQrBatchHistory(synced);return;}var selectedBatch=getSelectedQrBatchId();if(!selectedBatch){selectedBatch=_pickDefaultQrBatchId(ids,meta);if(selectedBatch)setSelectedQrBatchId(selectedBatch);}var displayIds=selectedBatch?ids.filter(function(id){return _qrBatchOf(meta,id)===selectedBatch;}):ids.slice();if(!displayIds.length)displayIds=ids.slice();var res=await db.from('treasures').select('id,found_by');var tMap={};(res.data||[]).forEach(function(t){tMap[t.id]=t.found_by;});displayIds.forEach(function(id){var sid='qrs_r_'+id.replace(/[^a-z0-9]/gi,'_');var placed=id in tMap;var found=placed&&tMap[id]&&tMap[id].length>0;var borderColor=found?'#f97316':placed?'#4ade80':'transparent';var labelColor=found?'#f97316':placed?'#4ade80':'#93c5fd';var badge=found?' 🎯':placed?' ✓':'';var m=meta[id]||{};var qBadge=m.quest?'<span style="background:#1c3351;color:#7dd3fc;font-size:0.6rem;font-weight:600;padding:1px 5px;border-radius:6px;margin-left:3px">'+m.quest+'</span>':'';var oBadge=m.objet?'<div style="font-size:0.62rem;color:#94a3b8;margin-top:2px">&#128230; '+m.objet+'</div>':'';var card=document.createElement('div');card.className='qr-card';card.id='qrc_'+id.replace(/[^a-z0-9]/gi,'_');card.style.opacity=found?'0.35':placed?'0.55':'1';card.style.border='2px solid '+borderColor;card.style.borderRadius='10px';card.style.position='relative';card.innerHTML='<div class="qr-card-id" style="color:'+labelColor+';font-size:1.08rem;line-height:1.05">'+id+badge+qBadge+'</div><div style="font-size:0.64rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#94a3b8;margin-top:2px">JADIKAN</div>'+oBadge+'<div style="background:#ffffff;padding:8px;border-radius:8px;display:inline-block"><div id="'+sid+'"></div></div>'+'<button onclick="editQrMeta(\''+id+'\')" style="margin-top:4px;width:100%;padding:3px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#94a3b8;font-size:0.65rem;cursor:pointer">&#9999;&#65039; Modifier</button>';grid.appendChild(card);var url=buildGameUrl('found',id);new QRCode(document.getElementById(sid),{text:url,width:150,height:150,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.L});});var total=ids.length;var placedCount=ids.filter(function(id){return id in tMap;}).length;var foundCount=ids.filter(function(id){return tMap[id]&&tMap[id].length>0;}).length;var info=document.getElementById('qrInfo');var lotTxt=selectedBatch?(' · affichage lot sélectionné ('+displayIds.length+' codes)'):'';info.innerHTML=total+' codes — <span style="color:#4ade80">'+placedCount+' posés ✓</span>, <span style="color:#f97316">'+foundCount+' trouvés 🎯</span>, '+(total-placedCount)+' disponibles'+lotTxt;info.style.display='block';document.getElementById('zipPngBtn').disabled=false;await renderQrBatchHistory(synced);}
 function qrGenericDisplayCode(id){
   var m=String(id||'').match(/-(\d+)$/);
   if(m&&m[1])return m[1];
@@ -1993,8 +2068,8 @@ function qrGenericDisplayCode(id){
   return parts.length>1?parts[parts.length-1]:String(id||'');
 }
 async function downloadQrZip(format){var fmt='png';var btn=document.getElementById('zipPngBtn');var batch=getLastQrBatch();var ids=(batch&&batch.ids)||[];if(!ids.length){alert('Générez d\'abord un lot de QR codes.');return;}btn.disabled=true;btn.textContent='⏳ Création du ZIP PNG ('+ids.length+' fichiers)…';var meta=JSON.parse(localStorage.getItem('u3dq_qr_meta')||'{}');var zip=new JSZip();var OUT_SZ=400;var QR_SZ=352;var QUIET=24;var PAD=96;var qSlug=slugifyQr(batch.quest||'sans_quete');var p=(batch.prefix||'QR').toUpperCase().replace(/[^A-Z0-9]/g,'');var folderName='qr_'+qSlug+'_'+p+'_'+String(batch.start).padStart(3,'0')+'-'+String(batch.end).padStart(3,'0');var outFolder=zip.folder(folderName);var manifest=['batch_id,quest,prefix,code,url,objet,created_at'];ids.forEach(function(id){var url=buildGameUrl('found',id);var m=meta[id]||{};var num=qrGenericDisplayCode(id);var basePrefix=(m.prefix||String(id).split('-')[0]||'QR').toUpperCase().replace(/[^A-Z0-9]/g,'');var display=basePrefix?basePrefix+'-'+num:num;var labelForPng=display+'\nJADIKAN';var payload=buildQrAsset(url,labelForPng,QRCode.CorrectLevel.L,fmt,{outSize:OUT_SZ,qrSize:QR_SZ,quiet:QUIET,bottomPad:PAD});if(payload&&outFolder){var safeCode=display.replace(/[^a-zA-Z0-9\-_]/g,'_');outFolder.file(safeCode+'.png',payload,{base64:true});}manifest.push([batch.id||'',batch.quest||'',basePrefix,display,url,m.objet||batch.objet||'',m.createdAt||batch.createdAt||''].map(function(v){return '"'+String(v).replace(/"/g,'""')+'"';}).join(','));});zip.file('manifest.csv',manifest.join('\n'));var blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=folderName+'.zip';document.body.appendChild(a);a.click();document.body.removeChild(a);btn.disabled=false;btn.textContent='⬇ Télécharger ZIP PNG (400px · Photoshop)';}
-async function loadQrLov(){var synced=await syncQrCatalogCloud();var generated=synced.ids||[];var metaLov=synced.meta||{};var sel=document.getElementById('fQrSelect');var info=document.getElementById('fQrInfo');sel.innerHTML='<option value="">— Aucun QR (ID auto) —</option>';var manOpt=document.createElement('option');manOpt.value='__manual__';manOpt.textContent='✏️ Saisir manuellement';sel.appendChild(manOpt);if(!generated.length){info.textContent='Aucun QR généré — allez dans l\'onglet QR pour en créer';info.style.color='#fb923c';return;}var res=await db.from('treasures').select('id');var used=new Set((res.data||[]).map(function(t){return t.id;}));var addQuest=(document.getElementById('fQuestSelect')||{}).value||'';var selectedBatch=getSelectedQrBatchId();var available=generated.filter(function(id){return !used.has(id);});available.sort(function(a,b){var am=metaLov[a]||{},bm=metaLov[b]||{};var aBatch=(selectedBatch&&am.batchId===selectedBatch)?0:1;var bBatch=(selectedBatch&&bm.batchId===selectedBatch)?0:1;if(aBatch!==bBatch)return aBatch-bBatch;var aq=(addQuest&&(am.quest||'')===addQuest)?0:1;var bq=(addQuest&&(bm.quest||'')===addQuest)?0:1;if(aq!==bq)return aq-bq;return String(a).localeCompare(String(b));});available.forEach(function(id,idx){var opt=document.createElement('option');opt.value=id;var m=metaLov[id]||{};var suffix=(m.quest?' ['+m.quest+']':' [legacy]')+(m.objet?' — '+m.objet:'')+(selectedBatch&&m.batchId===selectedBatch?' · [lot actif]':'');opt.textContent=(idx===0?'⬆ PROCHAIN : ':'')+id+suffix;sel.appendChild(opt);});var total=generated.length;var filterTxt=(selectedBatch?' (lot actif prioritaire)':'')+(addQuest?' (triés pour la quête '+addQuest+')':'');info.textContent=available.length+' QR disponibles sur '+total+' générés'+filterTxt+(available.length===0?' — tous déjà posés':'');info.style.color=available.length===0?'#fb923c':'#475569';if(available.length>0){sel.value=available[0];document.getElementById('fQrNum').style.display='none';}}
-async function loadQrLov(){var synced=await syncQrCatalogCloud();var generated=synced.ids||[];var metaLov=synced.meta||{};var sel=document.getElementById('fQrSelect');var info=document.getElementById('fQrInfo');sel.innerHTML='<option value="">— Aucun QR (ID auto) —</option>';var manOpt=document.createElement('option');manOpt.value='__manual__';manOpt.textContent='✏️ Saisir manuellement';sel.appendChild(manOpt);if(!generated.length){info.textContent='Aucun QR généré — allez dans l\'onglet QR pour en créer';info.style.color='#fb923c';return;}var res=await db.from('treasures').select('id');var used=new Set((res.data||[]).map(function(t){return t.id;}));var addQuest=(document.getElementById('fQuestSelect')||{}).value||'';var selectedBatch=getSelectedQrBatchId();var available=generated.filter(function(id){return !used.has(id);});available.sort(function(a,b){var am=metaLov[a]||{},bm=metaLov[b]||{};var aBatch=(selectedBatch&&_qrBatchOf(metaLov,a)===selectedBatch)?0:1;var bBatch=(selectedBatch&&_qrBatchOf(metaLov,b)===selectedBatch)?0:1;if(aBatch!==bBatch)return aBatch-bBatch;var aq=(addQuest&&(am.quest||'')===addQuest)?0:1;var bq=(addQuest&&(bm.quest||'')===addQuest)?0:1;if(aq!==bq)return aq-bq;return String(a).localeCompare(String(b));});available.forEach(function(id,idx){var opt=document.createElement('option');opt.value=id;var m=metaLov[id]||{};var suffix=(m.quest?' ['+m.quest+']':' [legacy]')+(m.objet?' — '+m.objet:'')+(selectedBatch&&_qrBatchOf(metaLov,id)===selectedBatch?' · [lot actif]':'');opt.textContent=(idx===0?'⬆ PROCHAIN : ':'')+id+suffix;sel.appendChild(opt);});var total=generated.length;var filterTxt=(selectedBatch?' (lot actif prioritaire)':'')+(addQuest?' (triés pour la quête '+addQuest+')':'');info.textContent=available.length+' QR disponibles sur '+total+' générés'+filterTxt+(available.length===0?' — tous déjà posés':'');info.style.color=available.length===0?'#fb923c':'#475569';if(available.length>0){sel.value=available[0];document.getElementById('fQrNum').style.display='none';}}
+async function loadQrLov(){var synced=await syncQrCatalogCloud();var generated=synced.ids||[];var metaLov=synced.meta||{};var sel=document.getElementById('fQrSelect');var info=document.getElementById('fQrInfo');sel.innerHTML='<option value="">— Aucun QR (ID auto) —</option>';var manOpt=document.createElement('option');manOpt.value='__manual__';manOpt.textContent='✏️ Saisir manuellement';sel.appendChild(manOpt);if(!generated.length){info.textContent='Aucun QR généré — allez dans l\'onglet QR pour en créer';info.style.color='#fb923c';return;}var res=await db.from('treasures').select('id');var used=new Set((res.data||[]).map(function(t){return t.id;}));var addQuest=(document.getElementById('fQuestSelect')||{}).value||'';var selectedBatch=getSelectedQrBatchId();var available=generated.filter(function(id){return !used.has(id);});available.sort(function(a,b){var am=metaLov[a]||{},bm=metaLov[b]||{};var aBatch=(selectedBatch&&am.batchId===selectedBatch)?0:1;var bBatch=(selectedBatch&&bm.batchId===selectedBatch)?0:1;if(aBatch!==bBatch)return aBatch-bBatch;var aq=(addQuest&&(am.quest||'')===addQuest)?0:1;var bq=(addQuest&&(bm.quest||'')===addQuest)?0:1;if(aq!==bq)return aq-bq;return String(a).localeCompare(String(b));});available.forEach(function(id,idx){var opt=document.createElement('option');opt.value=id;var m=metaLov[id]||{};var suffix=(m.quest?' ['+m.quest+']':' [legacy]')+(m.objet?' — '+m.objet:'')+(selectedBatch&&m.batchId===selectedBatch?' · [lot sélectionné]':'');opt.textContent=(idx===0?'⬆ PROCHAIN : ':'')+id+suffix;sel.appendChild(opt);});var total=generated.length;var filterTxt=(selectedBatch?' (lot sélectionné prioritaire)':'')+(addQuest?' (triés pour la quête '+addQuest+')':'');info.textContent=available.length+' QR disponibles sur '+total+' générés'+filterTxt+(available.length===0?' — tous déjà posés':'');info.style.color=available.length===0?'#fb923c':'#475569';if(available.length>0){sel.value=available[0];document.getElementById('fQrNum').style.display='none';}}
+async function loadQrLov(){var synced=await syncQrCatalogCloud();var generated=synced.ids||[];var metaLov=synced.meta||{};var sel=document.getElementById('fQrSelect');var info=document.getElementById('fQrInfo');sel.innerHTML='<option value="">— Aucun QR (ID auto) —</option>';var manOpt=document.createElement('option');manOpt.value='__manual__';manOpt.textContent='✏️ Saisir manuellement';sel.appendChild(manOpt);if(!generated.length){info.textContent='Aucun QR généré — allez dans l\'onglet QR pour en créer';info.style.color='#fb923c';return;}var res=await db.from('treasures').select('id');var used=new Set((res.data||[]).map(function(t){return t.id;}));var addQuest=(document.getElementById('fQuestSelect')||{}).value||'';var selectedBatch=getSelectedQrBatchId();var available=generated.filter(function(id){return !used.has(id);});available.sort(function(a,b){var am=metaLov[a]||{},bm=metaLov[b]||{};var aBatch=(selectedBatch&&_qrBatchOf(metaLov,a)===selectedBatch)?0:1;var bBatch=(selectedBatch&&_qrBatchOf(metaLov,b)===selectedBatch)?0:1;if(aBatch!==bBatch)return aBatch-bBatch;var aq=(addQuest&&(am.quest||'')===addQuest)?0:1;var bq=(addQuest&&(bm.quest||'')===addQuest)?0:1;if(aq!==bq)return aq-bq;return String(a).localeCompare(String(b));});available.forEach(function(id,idx){var opt=document.createElement('option');opt.value=id;var m=metaLov[id]||{};var suffix=(m.quest?' ['+m.quest+']':' [legacy]')+(m.objet?' — '+m.objet:'')+(selectedBatch&&_qrBatchOf(metaLov,id)===selectedBatch?' · [lot sélectionné]':'');opt.textContent=(idx===0?'⬆ PROCHAIN : ':'')+id+suffix;sel.appendChild(opt);});var total=generated.length;var filterTxt=(selectedBatch?' (lot sélectionné prioritaire)':'')+(addQuest?' (triés pour la quête '+addQuest+')':'');info.textContent=available.length+' QR disponibles sur '+total+' générés'+filterTxt+(available.length===0?' — tous déjà posés':'');info.style.color=available.length===0?'#fb923c':'#475569';if(available.length>0){sel.value=available[0];document.getElementById('fQrNum').style.display='none';}}
 function onQrSelectChange(){var v=document.getElementById('fQrSelect').value;var inp=document.getElementById('fQrNum');if(v==='__manual__'){inp.style.display='block';inp.focus();}else{inp.style.display='none';inp.value=v;}}
 var _questTargetId=null;
 var _questTargetBtn=null;
