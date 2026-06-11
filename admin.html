@@ -43,6 +43,10 @@
     nav{display:flex;background:var(--surface);border-bottom:1px solid var(--line-2)}
     nav button{flex:1;padding:10px 2px;background:none;border:none;color:var(--ink-3);font-family:var(--display);font-size:0.68rem;cursor:pointer}
     nav button.active{color:var(--ink);border-bottom:2px solid var(--magenta)}
+    #subTabBar{display:none;gap:6px;padding:8px 10px;background:var(--surface);border-bottom:1px solid var(--line)}
+    #subTabBar.active{display:flex}
+    #subTabBar button{flex:1;padding:7px 8px;border:1px solid var(--line-2);border-radius:8px;background:var(--bg-2);color:var(--ink-2);font-size:0.72rem;cursor:pointer}
+    #subTabBar button.active{border-color:var(--cyan);color:var(--cyan);background:rgba(0,229,255,0.08)}
     .panel{display:none;padding:16px;max-width:600px;margin:0 auto}
     .panel.active{display:block}
     /* ── Player cards ── */
@@ -166,14 +170,12 @@
   <button id="logoutBtn" onclick="adminLogout()" style="margin-left:auto;padding:5px 12px;background:#450a0a;border:1px solid #7f1d1d;border-radius:8px;color:#f87171;font-size:0.75rem;font-weight:700;cursor:pointer;display:none">Déconnexion</button>
 </header>
 <nav>
-  <button class="active" onclick="showTab('add',this)">➕ Ajouter</button>
-  <button onclick="showTab('fixed',this)">📌 Fixes</button>
-  <button onclick="showTab('unique',this)">🎁 Uniques</button>
-  <button onclick="showTab('players',this)">👥 Joueurs</button>
-  <button onclick="showTab('map',this)">🗺 Carte</button>
-  <button onclick="showTab('cfg',this)">⚙ Config</button>
-  <button onclick="showTab('qr',this)">QR</button>
+  <button id="mainTabAdd" class="active" onclick="showMainTab('add',this)">➕ Créer</button>
+  <button id="mainTabTreasures" onclick="showMainTab('treasures',this)">🎁 Trésors</button>
+  <button id="mainTabQr" onclick="showMainTab('qr',this)">QR</button>
+  <button id="mainTabPilotage" onclick="showMainTab('pilotage',this)">⚙ Pilotage</button>
 </nav>
+<div id="subTabBar"></div>
 <div id="panelAdd" class="panel active">
   <div id="stAdd" class="status"></div>
   <div class="field">
@@ -232,6 +234,12 @@
   </select>
   <p style="font-size:0.72rem;color:#94a3b8;margin:-2px 0 10px">Info: changer la photo ne modifie pas la position GPS du trésor.</p>
   <div id="uniqueList"><p class="loading-text">Chargement</p></div>
+</div>
+<div id="panelSolo" class="panel">
+  <div id="stSolo" class="status"></div>
+  <p style="font-size:0.75rem;color:#94a3b8;margin:-2px 0 10px">Liste dédiée des QR solo hors carte (<code>solo_hidden=true</code>). Coche = déjà flashé.</p>
+  <button class="btn" onclick="loadSoloList()" style="background:#1e293b;border:1px solid #334155">↻ Actualiser la liste Solo</button>
+  <div id="soloList"><p class="loading-text">Chargement</p></div>
 </div>
 <div id="panelPlayers" class="panel">
   <div id="playersList"><p class="loading-text">Chargement</p></div>
@@ -537,11 +545,14 @@ var SUPABASE_ENV=resolveSupabaseEnv();
 var SUPABASE_URL=SUPABASE_ENV.url;
 var SUPABASE_KEY=SUPABASE_ENV.key;
 var GAME_BASE_URL='https://www.urban3Dquest.fr';
+var SOLO_QR_BASE_URL='https://www.jadikan-lp.com/LandingGameArles/';
 // <SYNC:GAME_WEB_VERSION_START>
 var GAME_WEB_VERSION='a852a91'; // cache-busting for mobile scans — synced from urban3DQuest HEAD
 // <SYNC:GAME_WEB_VERSION_END>
-function buildGameUrl(param,value){return GAME_BASE_URL+'/?'+param+'='+value+'&v='+GAME_WEB_VERSION;}
+function buildGameUrl(param,value){if(param==='found'){try{var meta=JSON.parse(localStorage.getItem('u3dq_qr_meta')||'{}');if(meta&&meta[value]&&meta[value].soloHidden)return buildSoloQrUrl(value);}catch(e){}}return GAME_BASE_URL+'/?'+param+'='+value+'&v='+GAME_WEB_VERSION;}
 function buildGameUrlPrint(param,value){return GAME_BASE_URL+'/?'+param+'='+value;}
+function buildSoloQrUrl(value){return SOLO_QR_BASE_URL+'?found='+encodeURIComponent(value)+'&v='+GAME_WEB_VERSION;}
+function buildTreasureQrUrl(id,metaEntry){return metaEntry&&metaEntry.soloHidden?buildSoloQrUrl(id):buildGameUrl('found',id);}
 var ADMIN_UI_VERSION='v4';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,egressEmergency=false,realtimeEnabled=false,photoDataUrls=[],adminMap=null,mapLayers=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
@@ -639,12 +650,11 @@ async function init(){
   startGeo();await loadConfig();setType('unique');loadQrLov();
   // Restaurer l'onglet actif depuis localStorage
   var savedTab=localStorage.getItem('u3dq_admin_tab');
-  if(savedTab&&savedTab!=='add'){
-    var navBtns=document.querySelectorAll('nav button');
-    var tabMap={fixed:1,unique:2,players:3,map:4,cfg:5,qr:6};
-    var idx=tabMap[savedTab];
-    if(idx!==undefined&&navBtns[idx])showTab(savedTab,navBtns[idx]);
-  }
+  var savedMain=_mainOfTab(savedTab||'add');
+  if(savedMain==='treasures')showMainTab('treasures',document.getElementById('mainTabTreasures'),savedTab||'unique');
+  else if(savedMain==='qr')showMainTab('qr',document.getElementById('mainTabQr'));
+  else if(savedMain==='pilotage')showMainTab('pilotage',document.getElementById('mainTabPilotage'),savedTab||'cfg');
+  else showMainTab('add',document.getElementById('mainTabAdd'));
 }
 function populateQuestSelectors(){var configs=[{id:'fQuestSelect',first:'— Sans quête —'},{id:'filterQuestFixed',first:'Toutes les quêtes'},{id:'filterQuestUnique',first:'Toutes les quêtes'},{id:'filterQuestQr',first:'Toutes les quêtes'},{id:'filterQuestMap',first:'Toutes les quêtes'},{id:'qrNewQuest',first:'— Aucune quête —'}];configs.forEach(function(c){var sel=document.getElementById(c.id);if(!sel)return;var cur=sel.value;while(sel.options.length>1)sel.remove(1);questList.forEach(function(q){var opt=document.createElement('option');opt.value=q;opt.textContent=q;sel.appendChild(opt);});if(cur)sel.value=cur;});document.getElementById('questField').style.display=questList.length?'block':'none';renderQuestListAdmin();onQrQuestChange();}
 function renderQuestListAdmin(){var el=document.getElementById('questListAdmin');if(!questList.length){el.innerHTML='<p style="font-size:0.78rem;color:#475569">Aucune quête définie.</p>';return;}el.innerHTML=questList.map(function(q,i){var on=activeQuests.indexOf(q)>=0;var qEsc=escHtml(q);var msg=escHtml(rewardMessages[q]||'');return '<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;margin-bottom:8px;overflow:hidden">'+'<div style="display:flex;align-items:center;gap:8px;padding:8px 10px">'+'<button onclick="toggleQuestActive(\'' + q.replace(/'/g,"\\'") + '\')" title="'+(on?'Désactiver':'Activer')+' pour les joueurs" style="font-size:1.1rem;background:none;border:none;cursor:pointer;padding:0;line-height:1">'+(on?'🟢':'⚫')+'</button>'+'<span style="flex:1;font-size:0.85rem;font-weight:600">'+qEsc+'</span>'+'<button onclick="renameQuest('+i+')" title="Renommer" style="padding:4px 8px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#93c5fd;cursor:pointer;font-size:0.75rem">✏️</button>'+'<button onclick="deleteQuest('+i+')" style="padding:4px 10px;background:#450a0a;border:none;border-radius:6px;color:#f87171;cursor:pointer;font-size:0.75rem">🗑</button>'+'</div>'+'<div style="padding:0 10px 8px">'+'<input type="text" id="rewardMsg_'+i+'" data-quest="'+qEsc+'" value="'+msg+'" placeholder="Message récompense quand tous les fixes sont trouvés..." '+'style="width:100%;padding:7px 10px;background:#1e293b;border:1px solid #334155;border-radius:7px;color:#f1f5f9;font-size:0.78rem;box-sizing:border-box" '+'oninput="rewardMessages[this.dataset.quest]=this.value">'+'</div>'+'</div>';}).join('');}
@@ -652,7 +662,71 @@ async function addQuest(){var inp=document.getElementById('newQuestName');var na
 async function renameQuest(i){var oldName=questList[i];if(!oldName)return;var newName=prompt('Nouveau nom pour la quête :',oldName);if(newName===null)return;newName=newName.trim();if(!newName||newName===oldName)return;if(questList.indexOf(newName)>=0){alert('Cette quête existe déjà.');return;}var oldReward=rewardMessages[oldName]||'';questList[i]=newName;activeQuests=activeQuests.map(function(q){return q===oldName?newName:q;});if(oldName in rewardMessages){delete rewardMessages[oldName];rewardMessages[newName]=oldReward;}var qRes=await db.from('config').upsert({key:'quests',value:JSON.stringify(questList)});if(qRes.error){alert('Erreur renommage quête : '+qRes.error.message);return;}await db.from('config').upsert({key:'activeQuests',value:JSON.stringify(activeQuests)});if(oldReward){await db.from('config').upsert({key:'rewardMessage_'+newName,value:oldReward});}await db.from('config').delete().eq('key','rewardMessage_'+oldName);await db.from('treasures').update({quest:newName}).eq('quest',oldName);populateQuestSelectors();showStatus(document.getElementById('stCfg'),'ok','Quête renommée : '+newName);}
 async function deleteQuest(i){if(!confirm('Supprimer la quête "'+questList[i]+'" ? (les trésors liés ne seront pas supprimés)'))return;var qname=questList[i];questList.splice(i,1);delete rewardMessages[qname];activeQuests=activeQuests.filter(function(x){return x!==qname;});await db.from('config').upsert({key:'quests',value:JSON.stringify(questList)});await db.from('config').upsert({key:'activeQuests',value:JSON.stringify(activeQuests)});populateQuestSelectors();}
 async function toggleQuestActive(q){var idx=activeQuests.indexOf(q);if(idx>=0)activeQuests.splice(idx,1);else activeQuests.push(q);await db.from('config').upsert({key:'activeQuests',value:JSON.stringify(activeQuests)});renderQuestListAdmin();}
-function showTab(name,btn){document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active');});document.querySelectorAll('nav button').forEach(function(b){b.classList.remove('active');});document.getElementById('panel'+name.charAt(0).toUpperCase()+name.slice(1)).classList.add('active');btn.classList.add('active');localStorage.setItem('u3dq_admin_tab',name);if(name==='fixed')loadTreasureList('fixed','fixedList');if(name==='unique')loadTreasureList('unique','uniqueList');if(name==='players')loadPlayers();if(name==='map')initMap();if(name==='cfg')loadStats();if(name==='add')loadQrLov();if(name==='qr')restoreQrGrid();}
+function _mainOfTab(tab){
+  if(tab==='add')return 'add';
+  if(tab==='fixed'||tab==='unique'||tab==='solo')return 'treasures';
+  if(tab==='qr')return 'qr';
+  if(tab==='players'||tab==='map'||tab==='cfg')return 'pilotage';
+  return 'add';
+}
+function _renderSubTabs(main,activeTab){
+  var bar=document.getElementById('subTabBar');
+  if(!bar)return;
+  if(main==='treasures'){
+    bar.classList.add('active');
+    bar.innerHTML=''
+      +'<button id="subTabFixed" onclick="openSubTab(\'fixed\')">📌 Fixes</button>'
+      +'<button id="subTabUnique" onclick="openSubTab(\'unique\')">🎁 Flash</button>'
+      +'<button id="subTabSolo" onclick="openSubTab(\'solo\')">🕶 Solo</button>';
+  }else if(main==='pilotage'){
+    bar.classList.add('active');
+    bar.innerHTML=''
+      +'<button id="subTabPlayers" onclick="openSubTab(\'players\')">👥 Joueurs</button>'
+      +'<button id="subTabMap" onclick="openSubTab(\'map\')">🗺 Carte</button>'
+      +'<button id="subTabCfg" onclick="openSubTab(\'cfg\')">⚙ Config</button>';
+  }else{
+    bar.classList.remove('active');
+    bar.innerHTML='';
+  }
+  var map={fixed:'subTabFixed',unique:'subTabUnique',solo:'subTabSolo',players:'subTabPlayers',map:'subTabMap',cfg:'subTabCfg'};
+  var activeId=map[activeTab];
+  if(activeId&&document.getElementById(activeId))document.getElementById(activeId).classList.add('active');
+}
+function showMainTab(main,btn,preferredSubTab){
+  document.querySelectorAll('nav button').forEach(function(b){b.classList.remove('active');});
+  if(btn)btn.classList.add('active');
+  if(main==='treasures'){
+    var sub=preferredSubTab||localStorage.getItem('u3dq_admin_sub_treasures')||'unique';
+    if(['fixed','unique','solo'].indexOf(sub)===-1)sub='unique';
+    showTab(sub);
+    localStorage.setItem('u3dq_admin_sub_treasures',sub);
+    _renderSubTabs(main,sub);
+    return;
+  }
+  if(main==='pilotage'){
+    var psub=preferredSubTab||localStorage.getItem('u3dq_admin_sub_pilotage')||'cfg';
+    if(['players','map','cfg'].indexOf(psub)===-1)psub='cfg';
+    showTab(psub);
+    localStorage.setItem('u3dq_admin_sub_pilotage',psub);
+    _renderSubTabs(main,psub);
+    return;
+  }
+  if(main==='qr'){
+    showTab('qr');
+    _renderSubTabs(main,'qr');
+    return;
+  }
+  showTab('add');
+  _renderSubTabs(main,'add');
+}
+function openSubTab(tab){
+  var main=_mainOfTab(tab);
+  if(main==='treasures')localStorage.setItem('u3dq_admin_sub_treasures',tab);
+  if(main==='pilotage')localStorage.setItem('u3dq_admin_sub_pilotage',tab);
+  showTab(tab);
+  _renderSubTabs(main,tab);
+}
+function showTab(name){document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active');});document.getElementById('panel'+name.charAt(0).toUpperCase()+name.slice(1)).classList.add('active');localStorage.setItem('u3dq_admin_tab',name);if(name==='fixed')loadTreasureList('fixed','fixedList');if(name==='unique')loadTreasureList('unique','uniqueList');if(name==='solo')loadSoloList();if(name==='players')loadPlayers();if(name==='map')initMap();if(name==='cfg')loadStats();if(name==='add')loadQrLov();if(name==='qr')restoreQrGrid();}
 var _geoWatchId=null;function startGeo(){var el=document.getElementById('geoBar');el.textContent='Localisation en cours...';if(_geoWatchId!==null){navigator.geolocation.clearWatch(_geoWatchId);}_geoWatchId=navigator.geolocation.watchPosition(function(pos){currentLoc={lat:pos.coords.latitude,lng:pos.coords.longitude,acc:Math.round(pos.coords.accuracy)};el.textContent=currentLoc.lat.toFixed(5)+', '+currentLoc.lng.toFixed(5)+' +/-'+currentLoc.acc+'m';el.style.color='#4ade80';},function(err){var msgs={1:'Permission refusee',2:'Position indisponible',3:'Delai depasse'};el.textContent=(msgs[err.code]||'Erreur GPS')+' - tap pour reessayer';el.style.color='#fb923c';},{enableHighAccuracy:true,timeout:20000,maximumAge:0});}
 function addPhoto(evt){var file=evt.target.files[0];if(!file)return;var reader=new FileReader();reader.onload=function(e){var img=new Image();img.onload=function(){var canvas=document.createElement('canvas');var MAX=800,ratio=Math.min(MAX/img.width,MAX/img.height,1);canvas.width=img.width*ratio;canvas.height=img.height*ratio;canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);photoDataUrls.push(canvas.toDataURL('image/jpeg',0.82));renderPhotoStrip();};img.src=e.target.result;};reader.readAsDataURL(file);evt.target.value='';}
 function _cfgGuideFieldIds(kind){
@@ -732,7 +806,7 @@ async function saveTreasure(){var btn=document.getElementById('saveBtn');var st=
   var questVal=document.getElementById('fQuestSelect').value||'';
   if(!res.error&&questVal){await db.from('treasures').update({quest:questVal}).eq('id',id);}
   btn.disabled=false;btn.textContent='Enregistrer le tresor';if(res.error){showStatus(st,'err','Erreur: '+res.error.message);return;}showStatus(st,'ok',currentType==='unique'?(initialVisible?(label+' enregistré et visible immédiatement pour les joueurs.'):(label+' enregistré en brouillon Flash.')):(label+' enregistre'+(uploadedUrls.length?' avec '+uploadedUrls.length+' photo(s)':'' )+'!'));showQR(id,label,currentType);document.getElementById('fLabel').value='';document.getElementById('fHint').value='';document.getElementById('fQrNum').value='';document.getElementById('fQrSelect').value='';document.getElementById('fQrNum').style.display='none';document.getElementById('photoInput').value='';photoDataUrls=[];renderPhotoStrip();loadQrLov();}
-async function loadTreasureList(type,elId){var el=document.getElementById(elId);el.innerHTML='<p style="color:#475569;text-align:center;padding:40px">Chargement</p>';var filterId=type==='fixed'?'filterQuestFixed':'filterQuestUnique';var questFilter=document.getElementById(filterId)?document.getElementById(filterId).value:'';var q=db.from('treasures').select('*').eq('type',type);if(questFilter)q=q.eq('quest',questFilter);var res=await q.order('placed_at',{ascending:false});if(res.error){el.innerHTML='<p style="color:#f87171;padding:16px">'+escHtml(res.error.message)+'</p>';return;}if(!res.data.length){el.innerHTML='<p style="color:#475569;text-align:center;padding:40px">Aucun trésor'+(questFilter?' pour cette quête':'')+' pour l\'instant</p>';return;}var cards=res.data.map(function(t){var found=t.found_by&&t.found_by.length>0;var date=new Date(t.placed_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});var sl=(t.label||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');var photos=getPhotoUrls(t.photo_url);var safePhoto=safeImgUrl(photos[0]||'');// Photo pleine largeur
+async function loadTreasureList(type,elId){var el=document.getElementById(elId);el.innerHTML='<p style="color:#475569;text-align:center;padding:40px">Chargement</p>';var filterId=type==='fixed'?'filterQuestFixed':'filterQuestUnique';var questFilter=document.getElementById(filterId)?document.getElementById(filterId).value:'';var q=db.from('treasures').select('*').eq('type',type);if(type==='unique')q=q.eq('solo_hidden',false);if(questFilter)q=q.eq('quest',questFilter);var res=await q.order('placed_at',{ascending:false});if(res.error){el.innerHTML='<p style="color:#f87171;padding:16px">'+escHtml(res.error.message)+'</p>';return;}if(!res.data.length){el.innerHTML='<p style="color:#475569;text-align:center;padding:40px">Aucun trésor'+(questFilter?' pour cette quête':'')+' pour l\'instant</p>';return;}var cards=res.data.map(function(t){var found=t.found_by&&t.found_by.length>0;var date=new Date(t.placed_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});var sl=(t.label||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');var photos=getPhotoUrls(t.photo_url);var safePhoto=safeImgUrl(photos[0]||'');// Photo pleine largeur
   var photoHtml=safePhoto?'<img src="'+escHtml(safePhoto)+'" style="width:100%;height:80px;object-fit:cover;border-radius:7px;margin-bottom:6px;display:block" loading="lazy">':'';
   var questBadge=t.quest?'<span data-quest-badge="" style="background:#1c3351;color:#7dd3fc;font-size:0.6rem;font-weight:600;padding:2px 5px;border-radius:7px">'+escHtml(t.quest)+'</span>':'';
     // Compteur joueurs pour balises fixes (trouvées par plusieurs)
@@ -768,6 +842,41 @@ async function loadTreasureList(type,elId){var el=document.getElementById(elId);
       +(found&&type!=='fixed'?'<span style="color:#4ade80">✓ '+escHtml(t.found_by)+'</span>':'')
       +'</div>'
       +'</div>';}).join('');el.innerHTML='<div class="t-grid">'+cards+'</div>';}
+async function loadSoloList(){
+  var el=document.getElementById('soloList');
+  if(!el)return;
+  el.innerHTML='<p style="color:#475569;text-align:center;padding:40px">Chargement</p>';
+  var res=await db.from('treasures').select('id,label,found_by,found_at,placed_at,quest,visible').eq('type','unique').eq('solo_hidden',true).order('placed_at',{ascending:false});
+  if(res.error){el.innerHTML='<p style="color:#f87171;padding:16px">'+escHtml(res.error.message)+'</p>';return;}
+  var rows=res.data||[];
+  if(!rows.length){el.innerHTML='<p style="color:#475569;text-align:center;padding:40px">Aucun QR solo pour le moment.</p>';return;}
+  var html=rows.map(function(t){
+    var found=!!(t.found_by&&String(t.found_by).trim());
+    var foundBy=found?escHtml(t.found_by):'—';
+    var dateTxt=t.placed_at?new Date(t.placed_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'—';
+    var quest=t.quest?'<span style="background:#1c3351;color:#7dd3fc;font-size:0.6rem;font-weight:600;padding:2px 5px;border-radius:7px">'+escHtml(t.quest)+'</span>':'';
+    var check=found?'☑':'☐';
+    var state=found?'flashé':'non flashé';
+    var label=escHtml(t.label||t.id);
+    return '<div class="t-card" style="margin-bottom:8px">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'
+      +'<div style="font-size:0.9rem;font-weight:700;color:'+(found?'#4ade80':'#94a3b8')+'">'+check+' '+state+'</div>'
+      +'<button class="t-ico t-ico-warn" style="min-width:96px" '+(found?'':'disabled')+' onclick="resetSoloTreasure(\''+escHtml(t.id).replace(/'/g,"\\'")+'\')">↺ Déflasher</button>'
+      +'</div>'
+      +'<div style="margin-top:5px;display:flex;align-items:center;gap:5px;flex-wrap:wrap">'
+      +'<span class="t-label" style="flex:1;min-width:0">'+label+'</span>'
+      +quest
+      +(t.visible?'<span class="badge" style="font-size:0.55rem;background:#14532d;color:#4ade80">actif</span>':'<span class="badge b-hidden" style="font-size:0.55rem">masqué</span>')
+      +'</div>'
+      +'<div class="t-meta" style="margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+      +'<span style="font-family:monospace;font-size:0.65rem;background:#1e293b;color:#94a3b8;padding:1px 5px;border-radius:4px">'+escHtml(t.id)+'</span>'
+      +'<span>Déposé: '+dateTxt+'</span>'
+      +'<span style="color:'+(found?'#4ade80':'#64748b')+'">Flashé par: '+foundBy+'</span>'
+      +'</div>'
+      +'</div>';
+  }).join('');
+  el.innerHTML=html;
+}
 async function loadPlayers(){var el=document.getElementById('playersList');el.innerHTML='<p style="color:#475569;text-align:center;padding:40px">Chargement…</p>';var rp=await db.from('players').select('pseudo,score,found_count,joined_at').order('found_count',{ascending:false});var re=await db.from('events').select('pseudo,treasure_id,treasure_type,created_at').order('created_at',{ascending:true});var rt=await db.from('treasures').select('id,label,type');if(rp.error){el.innerHTML='<p style="color:#f87171;padding:16px">'+escHtml(rp.error.message)+'</p>';return;}if(!rp.data||!rp.data.length){el.innerHTML='<p style="color:#475569;text-align:center;padding:40px">Aucun joueur inscrit</p>';return;}var tLabels={};(rt.data||[]).forEach(function(t){tLabels[t.id]=escHtml(t.label||(t.type==='fixed'?'Balise fixe':'Trésor unique'));});var evByPlayer={};(re.data||[]).forEach(function(e){if(!evByPlayer[e.pseudo])evByPlayer[e.pseudo]=[];evByPlayer[e.pseudo].push(e);});var medals=['🥇','🥈','🥉'];el.innerHTML=rp.data.map(function(p,i){var evs=evByPlayer[p.pseudo]||[];var fixedCount=evs.filter(function(e){return e.treasure_type==='fixed';}).length;var uniqueCount=evs.filter(function(e){return e.treasure_type==='unique';}).length;var joinDate=new Date(p.joined_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});var badges=evs.map(function(e){return'<span class="p-found-badge" title="'+new Date(e.created_at).toLocaleTimeString('fr-FR')+'">'+(e.treasure_type==='fixed'?'📌':'🎁')+(tLabels[e.treasure_id]||escHtml(e.treasure_id))+'</span>';}).join('');var scoreLabel=fixedCount+' 📌'+(uniqueCount?' · '+uniqueCount+' 🎁':'');var sp=p.pseudo.replace(/'/g,"\\'");return'<div class="p-card"><div class="p-head"><span style="font-size:1.2rem">'+(medals[i]||'#'+(i+1))+'</span><span class="p-name">'+escHtml(p.pseudo)+'</span><span class="p-score">'+scoreLabel+'</span><button onclick="deletePlayer(\''+sp+'\')" title="Supprimer ce joueur" style="margin-left:auto;padding:4px 9px;background:#450a0a;border:none;border-radius:6px;color:#f87171;cursor:pointer;font-size:0.75rem;flex-shrink:0">🗑</button></div><div style="font-size:0.72rem;color:#475569;margin-bottom:6px">Inscrit le '+joinDate+'</div>'+(badges?'<div class="p-found-list">'+badges+'</div>':'<div style="font-size:0.75rem;color:#334155">Aucun trésor trouvé</div>')+'</div>';}).join('');}
 async function validateDeposit(id){return toggleVis2(id,false,'unique');}
 async function deletePlayer(pseudo){if(!confirm('Supprimer le joueur "'+pseudo+'" ?\n\nSes événements seront également supprimés. Les trésors qu\'il a trouvés resteront trouvés.'))return;await db.from('events').delete().eq('pseudo',pseudo);await db.from('players').delete().eq('pseudo',pseudo);loadPlayers();}
@@ -802,6 +911,7 @@ async function toggleVis2(id,current,type){
 }
 async function deleteTreasure(id,label,type){if(!confirm('Supprimer ?'))return;await db.from('treasures').delete().eq('id',id);loadTreasureList(type||'fixed',type==='unique'?'uniqueList':'fixedList');}
 async function resetTreasure(id,type){if(!confirm('Remettre cette balise comme "non trouvée" ?'))return;var payload={found_by:'',found_at:null};if(type==='unique'){payload.visible=false;payload.activated_at=null;}await db.from('treasures').update(payload).eq('id',id);await db.from('events').delete().eq('treasure_id',id);loadTreasureList(type||'fixed',type==='unique'?'uniqueList':'fixedList');}
+async function resetSoloTreasure(id){if(!confirm('Déflasher ce QR solo ?'))return;var upd=await db.from('treasures').update({found_by:'',found_at:null}).eq('id',id).eq('solo_hidden',true);if(upd.error){alert('Erreur déflash: '+upd.error.message);return;}var del=await db.from('events').delete().eq('treasure_id',id);if(del.error){alert('Erreur suppression événement: '+del.error.message);return;}loadSoloList();}
 async function initMap(){
   await new Promise(function(r){setTimeout(r,60);});
   if(!adminMap){
@@ -1500,7 +1610,7 @@ async function generateSoloQRCodes(){
     var id=prefix+'-'+num;
     generatedIds.push(id);
     meta[id]={quest:quest,objet:objet,prefix:prefix,batchId:batchId,createdAt:createdAt,soloHidden:true};
-    var url=buildGameUrl('found',id);
+    var url=buildSoloQrUrl(id);
     var sid='qrs_solo_'+i;
     var pid='qrp_solo_'+i;
     var qBadge=quest?'<span style="background:#1c3351;color:#7dd3fc;font-size:0.6rem;font-weight:600;padding:1px 5px;border-radius:6px;margin-left:3px">'+quest+'</span>':'';
