@@ -82,6 +82,10 @@
     .solo-card.found{border-color:rgba(74,222,128,0.45);box-shadow:inset 0 0 0 1px rgba(74,222,128,0.18)}
     .solo-top{display:flex;align-items:center;justify-content:space-between;gap:4px}
     .solo-id{font-family:var(--mono);font-size:0.64rem;font-weight:700;color:#cbd5e1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .solo-flash-num{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;font-size:0.62rem;font-weight:800;line-height:1;border:1px solid transparent}
+    .solo-flash-num.zero{background:#1e293b;color:#94a3b8;border-color:#334155}
+    .solo-flash-num.low{background:#0f3a2a;color:#86efac;border-color:#166534}
+    .solo-flash-num.high{background:#4a1d0f;color:#fdba74;border-color:#9a3412}
     .solo-reset{border:1px solid #78350f;background:#422006;color:#fdba74;border-radius:6px;padding:1px 5px;font-size:0.64rem;cursor:pointer}
     .solo-reset:disabled{opacity:.45;cursor:not-allowed}
     .solo-state{font-size:0.64rem;font-weight:700;color:#94a3b8}
@@ -926,13 +930,14 @@ async function loadSoloList(){
     var found=!!(foundByTxt||t.found_at);
     var foundBy=found?(foundByTxt?escHtml(foundByTxt):'inconnu'):'-';
     var count=flashCountById[t.id]||0;
+    var countClass=count===0?'zero':(count<3?'low':'high');
     var questTxt=t.quest?escHtml(t.quest):'Sans quete';
     return '<div class="solo-card'+(found?' found':'')+'">'
       +'<div class="solo-top">'
       +'<span class="solo-id">'+escHtml(t.id)+'</span>'
+      +'<span class="solo-flash-num '+countClass+'" title="Nombre de flashs">'+count+'</span>'
       +'<button class="solo-reset" '+(found?'':'disabled')+' onclick="resetSoloTreasure(\''+escHtml(t.id).replace(/'/g,"\\'")+'\')">↺</button>'
       +'</div>'
-      +'<div class="solo-line '+(found?'ok':'dim')+'">'+(found?'scanne':'non scanne')+' · x'+count+'</div>'
       +'<div class="solo-line dim">'+questTxt+' · '+(t.visible?'actif':'masque')+'</div>'
       +'<div class="solo-line '+(found?'ok':'dim')+'">par: '+foundBy+'</div>'
       +'</div>';
