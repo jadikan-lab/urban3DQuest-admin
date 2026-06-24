@@ -314,6 +314,22 @@
     <input type="number" id="cfgQuestScanMaxGpsAccuracy" value="35" min="5" max="200">
     <div style="font-size:0.72rem;color:#475569;margin-top:4px">Ex: 35 = scan bloqué si précision GPS est pire que ±35m.</div>
   </div>
+  <hr style="border:none;border-top:1px solid #334155;margin:16px 0">
+  <h3 style="font-size:0.82rem;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">⚡ Cercle Flash</h3>
+  <div class="field">
+    <label>Rayon du cercle Flash (m)</label>
+    <input type="number" id="cfgFlashZoneRadius" value="45" min="15" max="300">
+    <div style="font-size:0.72rem;color:#475569;margin-top:4px">Rayon du cercle affiché sur la carte. Défaut réduit de moitié : 45 m.</div>
+  </div>
+  <div class="field">
+    <label>Décalage min du vrai point (m)</label>
+    <input type="number" id="cfgFlashZoneOffsetMin" value="20" min="0" max="295">
+  </div>
+  <div class="field">
+    <label>Décalage max du vrai point (m)</label>
+    <input type="number" id="cfgFlashZoneOffsetMax" value="40" min="0" max="295">
+    <div style="font-size:0.72rem;color:#475569;margin-top:4px">Cohérence automatique à l'enregistrement : le vrai point restera dans le cercle avec une marge minimale de 5 m.</div>
+  </div>
   <div class="toggle-row">
     <div class="toggle on" id="gameToggle" onclick="toggleGame()"></div>
     <span id="gameLabel">Jeu actif</span>
@@ -1107,6 +1123,9 @@ async function loadConfig(){
   if(cfg.proximityRadius)document.getElementById('cfgRadius').value=cfg.proximityRadius;
   if(cfg.fixedTotal)document.getElementById('cfgFixedTotal').value=cfg.fixedTotal;
   if(cfg.questScanMaxGpsAccuracy)document.getElementById('cfgQuestScanMaxGpsAccuracy').value=cfg.questScanMaxGpsAccuracy;
+  if(cfg.flashZoneRadiusM)document.getElementById('cfgFlashZoneRadius').value=cfg.flashZoneRadiusM;
+  if(cfg.flashZoneOffsetMinM)document.getElementById('cfgFlashZoneOffsetMin').value=cfg.flashZoneOffsetMinM;
+  if(cfg.flashZoneOffsetMaxM)document.getElementById('cfgFlashZoneOffsetMax').value=cfg.flashZoneOffsetMaxM;
 
   if(cfg.modeMap!==undefined){
     modeMap=cfg.modeMap!=='false';
@@ -1204,6 +1223,19 @@ async function saveConfig(){
   await db.from('config').upsert({key:'fixedTotal',value:document.getElementById('cfgFixedTotal').value});
   var qscanAcc=Math.max(5,Math.min(200,parseInt(document.getElementById('cfgQuestScanMaxGpsAccuracy').value,10)||35));
   await db.from('config').upsert({key:'questScanMaxGpsAccuracy',value:String(qscanAcc)});
+  var flashZoneRadius=Math.max(15,parseInt(document.getElementById('cfgFlashZoneRadius').value,10)||45);
+  var flashZoneOffsetMin=Math.max(0,parseInt(document.getElementById('cfgFlashZoneOffsetMin').value,10)||20);
+  var flashZoneOffsetMax=Math.max(flashZoneOffsetMin,parseInt(document.getElementById('cfgFlashZoneOffsetMax').value,10)||40);
+  var flashZoneMaxAllowed=Math.max(0,flashZoneRadius-5);
+  flashZoneOffsetMin=Math.min(flashZoneOffsetMin,flashZoneMaxAllowed);
+  flashZoneOffsetMax=Math.min(flashZoneOffsetMax,flashZoneMaxAllowed);
+  if(flashZoneOffsetMax<flashZoneOffsetMin)flashZoneOffsetMin=flashZoneOffsetMax;
+  document.getElementById('cfgFlashZoneRadius').value=String(flashZoneRadius);
+  document.getElementById('cfgFlashZoneOffsetMin').value=String(flashZoneOffsetMin);
+  document.getElementById('cfgFlashZoneOffsetMax').value=String(flashZoneOffsetMax);
+  await db.from('config').upsert({key:'flashZoneRadiusM',value:String(flashZoneRadius)});
+  await db.from('config').upsert({key:'flashZoneOffsetMinM',value:String(flashZoneOffsetMin)});
+  await db.from('config').upsert({key:'flashZoneOffsetMaxM',value:String(flashZoneOffsetMax)});
   await db.from('config').upsert({key:'modeMap',value:String(modeMap)});
   await db.from('config').upsert({key:'modeCompass',value:String(modeCompass)});
   await db.from('config').upsert({key:'gameActive',value:String(gameActive)});

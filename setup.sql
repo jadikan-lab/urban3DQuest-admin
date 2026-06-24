@@ -54,6 +54,9 @@ create table config (
 
 insert into config (key, value) values
   ('proximityRadius', '100'),
+  ('flashZoneRadiusM', '45'),
+  ('flashZoneOffsetMinM', '20'),
+  ('flashZoneOffsetMaxM', '40'),
   ('gameActive',      'true'),
   ('prelaunchEnabled','false'),
   ('launchAt',        ''),

@@ -50,6 +50,9 @@ create table if not exists config (
 -- Config par défaut (ne remplace pas les valeurs existantes)
 insert into config (key, value) values
   ('proximityRadius', '100'),
+  ('flashZoneRadiusM', '45'),
+  ('flashZoneOffsetMinM', '20'),
+  ('flashZoneOffsetMaxM', '40'),
   ('gameActive',      'true'),
   ('prelaunchEnabled','false'),
   ('launchAt',        ''),
