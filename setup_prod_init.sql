@@ -50,7 +50,10 @@ create table if not exists config (
 -- Config par défaut (ne remplace pas les valeurs existantes)
 insert into config (key, value) values
   ('proximityRadius', '100'),
-  ('gameActive',      'true')
+  ('gameActive',      'true'),
+  ('prelaunchEnabled','false'),
+  ('launchAt',        ''),
+  ('prelaunchMessage','')
 on conflict (key) do nothing;
 
 -- ── 2) Table admin_users ──────────────────────────────────────────────

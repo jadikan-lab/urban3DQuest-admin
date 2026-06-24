@@ -54,7 +54,10 @@ create table config (
 
 insert into config (key, value) values
   ('proximityRadius', '100'),
-  ('gameActive',      'true');
+  ('gameActive',      'true'),
+  ('prelaunchEnabled','false'),
+  ('launchAt',        ''),
+  ('prelaunchMessage','');
 
 -- ── Désactiver RLS (event privé) ─────────────────────
 alter table treasures disable row level security;
