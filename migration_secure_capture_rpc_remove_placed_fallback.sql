@@ -1,4 +1,5 @@
--- Secure capture RPC: validates session + proximity and writes treasure/event atomically.
+-- Secure capture RPC hardening: duration anchor must come from latest admin unmask only.
+-- Removes placed_at fallback to enforce activated_at as the sole anchor.
 -- Apply in PROD then STG.
 
 create or replace function public.process_find_secure(
@@ -100,7 +101,7 @@ begin
     v_game_start := null;
   end;
 
-  -- Duration is anchored on admin activation only (no placed_at fallback).
+  -- Strict business rule: only latest admin unmask timestamp anchors the duration.
   v_ref_time := coalesce(v_t.activated_at, v_now);
   if v_game_start is not null and v_game_start > v_ref_time then
     v_ref_time := v_game_start;
