@@ -893,6 +893,7 @@ async function loadTreasureList(type,elId){var el=document.getElementById(elId);
       +'<div class="t-icon-row">'
       +'<button class="t-ico" title="Modifier nom &amp; indice" onclick="editInline(\''+t.id+'\',\''+sl+'\',\''+sh+'\',\''+type+'\')">✏️</button>'
       +'<button class="t-ico" title="Déplacer sur la carte" onclick="moveOnMap(\''+t.id+'\','+t.lat+','+t.lng+',\''+sl+'\')">📍</button>'
+      +(type==='fixed'?'<button class="t-ico" title="Utiliser ma position actuelle" onclick="useCurrentLocationForTreasure(\''+t.id+'\',\''+sl+'\',\''+type+'\')">📡</button>':'')
       +'<button class="t-ico" title="Changer la photo" onclick="changePhoto(\''+t.id+'\')">📷</button>'
       +'<button class="t-ico" title="Changer la quête" data-tid="'+escHtml(t.id)+'" data-quest="'+escHtml(t.quest||'')+'" onclick="changeQuest(this)">🗂</button>'
       +'<button class="t-ico" id="visBtn_'+t.id+'" title="'+(t.visible?'Masquer':'Afficher')+'" onclick="toggleVis2(\''+t.id+'\','+t.visible+',\''+type+'\')">'+(t.visible?'👁':'🙈')+'</button>'
@@ -1087,6 +1088,21 @@ function moveOnMap(id,lat,lng,label){
   relocate={id:id,lat:lat,lng:lng,label:label};
   var navBtns=document.querySelectorAll('nav button');
   showTab('map',navBtns[4]);
+}
+async function useCurrentLocationForTreasure(id,label,type){
+  if(type!=='fixed')return;
+  if(!currentLoc||!Number.isFinite(currentLoc.lat)||!Number.isFinite(currentLoc.lng)){
+    alert('Position admin indisponible. Active d\'abord le GPS dans le bandeau de création.');
+    return;
+  }
+  var res=await db.from('treasures').update({lat:currentLoc.lat,lng:currentLoc.lng}).eq('id',id);
+  if(res.error){
+    alert('Erreur mise à jour position : '+res.error.message);
+    return;
+  }
+  showStatus(document.getElementById('stFixed'),'ok','Position mise à jour pour '+label+' ('+currentLoc.lat.toFixed(5)+', '+currentLoc.lng.toFixed(5)+' ±'+(currentLoc.acc||'?')+'m)');
+  loadTreasureList('fixed','fixedList');
+  if(document.getElementById('panelMap').classList.contains('active'))initMap();
 }
 async function saveRelocate(){
   if(!relocate)return;
