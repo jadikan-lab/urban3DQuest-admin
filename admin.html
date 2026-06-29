@@ -40,13 +40,15 @@
     .context-chip{font-family:var(--mono);font-size:0.68rem;font-weight:800;letter-spacing:.08em;padding:5px 9px;border-radius:999px;border:1px solid var(--line-2);text-transform:uppercase}
     .context-chip.role{color:var(--cyan);background:rgba(0,229,255,0.12);border-color:rgba(0,229,255,0.24)}
     .context-chip.env{color:var(--amber);background:rgba(255,176,32,0.12);border-color:var(--line-2)}
-    nav{display:flex;background:var(--surface);border-bottom:1px solid var(--line-2)}
-    nav button{flex:1;padding:10px 2px;background:none;border:none;color:var(--ink-3);font-family:var(--display);font-size:0.68rem;cursor:pointer}
-    nav button.active{color:var(--ink);border-bottom:2px solid var(--magenta)}
-    #subTabBar{display:none;gap:6px;padding:8px 10px;background:var(--surface);border-bottom:1px solid var(--line)}
+    nav{display:flex;gap:6px;padding:8px 10px;background:var(--surface-2);border-bottom:1px solid var(--line-2)}
+    nav button{flex:1;min-height:42px;padding:10px 8px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:10px;color:var(--ink-2);font-family:var(--display);font-size:0.76rem;font-weight:700;letter-spacing:.01em;line-height:1.12;cursor:pointer;transition:background .2s,border-color .2s,color .2s,box-shadow .2s}
+    nav button.active{color:var(--ink);border-color:rgba(255,61,138,0.65);background:linear-gradient(135deg,rgba(255,61,138,0.2),rgba(168,85,247,0.2));box-shadow:0 0 0 1px rgba(255,61,138,0.26)}
+    nav button:focus-visible{outline:none;border-color:var(--cyan);box-shadow:0 0 0 2px rgba(0,229,255,0.28)}
+    #subTabBar{display:none;gap:6px;padding:8px 10px;background:var(--surface-2);border-bottom:1px solid var(--line)}
     #subTabBar.active{display:flex}
-    #subTabBar button{flex:1;padding:7px 8px;border:1px solid var(--line-2);border-radius:8px;background:var(--bg-2);color:var(--ink-2);font-size:0.72rem;cursor:pointer}
-    #subTabBar button.active{border-color:var(--cyan);color:var(--cyan);background:rgba(0,229,255,0.08)}
+    #subTabBar button{flex:1;min-height:38px;padding:8px 8px;border:1px solid rgba(244,241,236,0.24);border-radius:8px;background:var(--bg-2);color:var(--ink);font-size:0.76rem;font-weight:700;line-height:1.1;cursor:pointer;transition:background .2s,border-color .2s,color .2s,box-shadow .2s}
+    #subTabBar button.active{border-color:var(--cyan);color:#d6fbff;background:rgba(0,229,255,0.15);box-shadow:0 0 0 1px rgba(0,229,255,0.22)}
+    #subTabBar button:focus-visible{outline:none;border-color:var(--cyan);box-shadow:0 0 0 2px rgba(0,229,255,0.28)}
     .panel{display:none;padding:16px;max-width:600px;margin:0 auto}
     .panel.active{display:block}
     /* ── Player cards ── */
@@ -138,6 +140,10 @@
     .env-qr-row{display:flex;gap:24px;justify-content:center;flex-wrap:wrap}
     .env-qr-item{min-width:0;flex:1 1 140px;max-width:180px}
     @media (max-width: 540px){
+      nav{padding:8px 8px;gap:5px}
+      nav button{min-height:44px;font-size:0.78rem;padding:10px 6px}
+      #subTabBar{padding:8px 8px;gap:5px}
+      #subTabBar button{min-height:40px;font-size:0.78rem}
       .env-qr-row{gap:14px}
       .env-qr-item{flex-basis:100%;max-width:none}
     }
