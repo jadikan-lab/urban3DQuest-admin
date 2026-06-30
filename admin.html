@@ -1863,7 +1863,7 @@ async function generateSoloQRCodes(){
   localStorage.setItem('u3dq_qr_meta', JSON.stringify(meta));
   await syncQrCatalogCloud();
   await renderQrBatchHistory();
-  await loadTreasureList('unique','uniqueList');
+  await loadSoloList();
   alert('QR solo créés: '+count+'\nIls sont hors carte (solo_hidden=true) et administrables dans la liste Flash.');
 }
 
