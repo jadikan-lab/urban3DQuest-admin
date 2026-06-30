@@ -5,6 +5,7 @@
 
 -- Nettoyage (si re-run)
 drop table if exists events cascade;
+drop table if exists scan_attempts cascade;
 drop table if exists players cascade;
 drop table if exists treasures cascade;
 drop table if exists config cascade;
@@ -46,6 +47,20 @@ create table events (
   duration_sec  bigint
 );
 
+-- ── Journal tentatives de scan refusées ───────────────────────────────
+create table scan_attempts (
+  id            bigserial primary key,
+  created_at    timestamptz default now(),
+  pseudo        text,
+  treasure_id   text references treasures(id) on delete set null,
+  treasure_type text,
+  status        text not null default 'too_far',
+  distance_m    integer,
+  proximity_m   integer,
+  player_lat    double precision,
+  player_lng    double precision
+);
+
 -- ── Config ────────────────────────────────────────────
 create table config (
   key   text primary key,
@@ -66,6 +81,7 @@ insert into config (key, value) values
 alter table treasures disable row level security;
 alter table players   disable row level security;
 alter table events    disable row level security;
+alter table scan_attempts disable row level security;
 alter table config    disable row level security;
 
 -- ── Realtime (leaderboard live) ───────────────────────

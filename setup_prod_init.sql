@@ -42,6 +42,19 @@ create table if not exists events (
   duration_sec  bigint
 );
 
+create table if not exists scan_attempts (
+  id            bigserial primary key,
+  created_at    timestamptz default now(),
+  pseudo        text,
+  treasure_id   text references treasures(id) on delete set null,
+  treasure_type text,
+  status        text not null default 'too_far',
+  distance_m    integer,
+  proximity_m   integer,
+  player_lat    double precision,
+  player_lng    double precision
+);
+
 create table if not exists config (
   key   text primary key,
   value text
@@ -94,6 +107,7 @@ grant execute on function public.is_admin() to anon, authenticated;
 alter table treasures enable row level security;
 alter table players   enable row level security;
 alter table events    enable row level security;
+alter table scan_attempts enable row level security;
 alter table config    enable row level security;
 
 -- ── 5) Nettoyer les anciennes policies (idempotent) ───────────────────
@@ -111,6 +125,9 @@ drop policy if exists events_read_all   on events;
 drop policy if exists events_insert_all on events;
 drop policy if exists events_admin_all  on events;
 
+drop policy if exists scan_attempts_read_all  on scan_attempts;
+drop policy if exists scan_attempts_admin_all on scan_attempts;
+
 drop policy if exists config_read_all  on config;
 drop policy if exists config_admin_all on config;
 
@@ -124,6 +141,9 @@ create policy players_read_all on players
 
 create policy events_read_all on events
   for select to anon, authenticated using (true);
+
+create policy scan_attempts_read_all on scan_attempts
+  for select to authenticated using (public.is_admin());
 
 create policy config_read_all on config
   for select to anon, authenticated using (true);
@@ -176,6 +196,10 @@ create policy players_admin_all on players
   using (public.is_admin()) with check (public.is_admin());
 
 create policy events_admin_all on events
+  for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+create policy scan_attempts_admin_all on scan_attempts
   for all to authenticated
   using (public.is_admin()) with check (public.is_admin());
 

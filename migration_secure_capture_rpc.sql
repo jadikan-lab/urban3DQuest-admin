@@ -1,6 +1,32 @@
 -- Secure capture RPC: validates session + proximity and writes treasure/event atomically.
 -- Apply in PROD then STG.
 
+create table if not exists public.scan_attempts (
+  id            bigserial primary key,
+  created_at    timestamptz default now(),
+  pseudo        text,
+  treasure_id   text references public.treasures(id) on delete set null,
+  treasure_type text,
+  status        text not null default 'too_far',
+  distance_m    integer,
+  proximity_m   integer,
+  player_lat    double precision,
+  player_lng    double precision
+);
+
+alter table public.scan_attempts enable row level security;
+
+drop policy if exists scan_attempts_read_all on public.scan_attempts;
+drop policy if exists scan_attempts_admin_all on public.scan_attempts;
+
+create policy scan_attempts_read_all on public.scan_attempts
+  for select to authenticated
+  using (public.is_admin());
+
+create policy scan_attempts_admin_all on public.scan_attempts
+  for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
 create or replace function public.process_find_secure(
   p_pseudo text,
   p_session_token text,
@@ -72,6 +98,15 @@ begin
   );
 
   if v_distance_m > greatest(10, coalesce(p_proximity_m, 100)) then
+    begin
+      insert into public.scan_attempts (
+        pseudo, treasure_id, treasure_type, status, distance_m, proximity_m, player_lat, player_lng
+      ) values (
+        p_pseudo, v_t.id, v_t.type, 'too_far', round(v_distance_m)::integer, greatest(10, coalesce(p_proximity_m, 100)), p_player_lat, p_player_lng
+      );
+    exception when others then
+      null;
+    end;
     return jsonb_build_object(
       'status', 'too_far',
       'distance_m', round(v_distance_m)
