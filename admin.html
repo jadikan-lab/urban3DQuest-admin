@@ -112,7 +112,7 @@
     .t-ico-del{background:#450a0a!important;border-color:#7f1d1d!important}
     .t-ico-warn{background:#422006!important;border-color:#78350f!important}
     .t-ico-qr{background:#172554!important;border-color:#1e3a8a!important}
-    #adminMap{height:calc(100vh - 156px - 48px - 46px);border-radius:10px;overflow:hidden}
+    #adminMap,#adminMapFixed{height:calc(100vh - 156px - 48px - 46px);border-radius:10px;overflow:hidden}
     .stat-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:0.85rem}
     .stat-row:last-child{border:none}
     select{width:100%;padding:8px 12px;background:var(--surface);border:1px solid var(--line-2);border-radius:9px;color:var(--ink);font-size:0.9rem;font-family:var(--display)}
@@ -282,6 +282,13 @@
     <option value="">Toutes les quêtes</option>
   </select>
   <div id="adminMap"></div>
+</div>
+<div id="panelMapFixed" class="panel" style="padding:8px">
+  <div style="font-size:0.74rem;color:#93c5fd;margin:0 0 8px">Carte dédiée aux balises fixes uniquement.</div>
+  <select id="filterQuestMapFixed" onchange="initMapFixed()" style="margin-bottom:8px;font-size:0.82rem">
+    <option value="">Toutes les quêtes</option>
+  </select>
+  <div id="adminMapFixed"></div>
 </div>
 <div id="panelCfg" class="panel">
   <div id="stCfg" class="status"></div>
@@ -635,7 +642,7 @@ function buildFoundQrUrl(id,meta){
 }
 var ADMIN_UI_VERSION='v4.1';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
-var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,prelaunchEnabled=false,egressEmergency=false,realtimeEnabled=false,photoDataUrls=[],adminMap=null,mapLayers=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
+var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,prelaunchEnabled=false,egressEmergency=false,realtimeEnabled=false,photoDataUrls=[],adminMap=null,mapLayers=[],adminMapFixed=null,mapLayersFixed=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
 var _adminTitle=document.getElementById('adminTitle');
 if(_adminTitle)_adminTitle.textContent='Urban3DQuest Admin · '+ADMIN_UI_VERSION+' · '+SUPABASE_ENV.label;
 var _envChip=document.getElementById('envChip');
@@ -736,7 +743,7 @@ async function init(){
   else if(savedMain==='pilotage')showMainTab('pilotage',document.getElementById('mainTabPilotage'),savedTab||'cfg');
   else showMainTab('add',document.getElementById('mainTabAdd'));
 }
-function populateQuestSelectors(){var configs=[{id:'fQuestSelect',first:'— Sans quête —'},{id:'filterQuestFixed',first:'Toutes les quêtes'},{id:'filterQuestUnique',first:'Toutes les quêtes'},{id:'filterQuestQr',first:'Toutes les quêtes'},{id:'filterQuestMap',first:'Toutes les quêtes'},{id:'qrNewQuest',first:'— Aucune quête —'}];configs.forEach(function(c){var sel=document.getElementById(c.id);if(!sel)return;var cur=sel.value;while(sel.options.length>1)sel.remove(1);questList.forEach(function(q){var opt=document.createElement('option');opt.value=q;opt.textContent=q;sel.appendChild(opt);});if(cur)sel.value=cur;});document.getElementById('questField').style.display=questList.length?'block':'none';renderQuestListAdmin();onQrQuestChange();}
+function populateQuestSelectors(){var configs=[{id:'fQuestSelect',first:'— Sans quête —'},{id:'filterQuestFixed',first:'Toutes les quêtes'},{id:'filterQuestUnique',first:'Toutes les quêtes'},{id:'filterQuestQr',first:'Toutes les quêtes'},{id:'filterQuestMap',first:'Toutes les quêtes'},{id:'filterQuestMapFixed',first:'Toutes les quêtes'},{id:'qrNewQuest',first:'— Aucune quête —'}];configs.forEach(function(c){var sel=document.getElementById(c.id);if(!sel)return;var cur=sel.value;while(sel.options.length>1)sel.remove(1);questList.forEach(function(q){var opt=document.createElement('option');opt.value=q;opt.textContent=q;sel.appendChild(opt);});if(cur)sel.value=cur;});document.getElementById('questField').style.display=questList.length?'block':'none';renderQuestListAdmin();onQrQuestChange();}
 function renderQuestListAdmin(){var el=document.getElementById('questListAdmin');if(!questList.length){el.innerHTML='<p style="font-size:0.78rem;color:#475569">Aucune quête définie.</p>';return;}el.innerHTML=questList.map(function(q,i){var on=activeQuests.indexOf(q)>=0;var qEsc=escHtml(q);var msg=escHtml(rewardMessages[q]||'');return '<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;margin-bottom:8px;overflow:hidden">'+'<div style="display:flex;align-items:center;gap:8px;padding:8px 10px">'+'<button onclick="toggleQuestActive(\'' + q.replace(/'/g,"\\'") + '\')" title="'+(on?'Désactiver':'Activer')+' pour les joueurs" style="font-size:1.1rem;background:none;border:none;cursor:pointer;padding:0;line-height:1">'+(on?'🟢':'⚫')+'</button>'+'<span style="flex:1;font-size:0.85rem;font-weight:600">'+qEsc+'</span>'+'<button onclick="renameQuest('+i+')" title="Renommer" style="padding:4px 8px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#93c5fd;cursor:pointer;font-size:0.75rem">✏️</button>'+'<button onclick="deleteQuest('+i+')" style="padding:4px 10px;background:#450a0a;border:none;border-radius:6px;color:#f87171;cursor:pointer;font-size:0.75rem">🗑</button>'+'</div>'+'<div style="padding:0 10px 8px">'+'<input type="text" id="rewardMsg_'+i+'" data-quest="'+qEsc+'" value="'+msg+'" placeholder="Message récompense quand tous les fixes sont trouvés..." '+'style="width:100%;padding:7px 10px;background:#1e293b;border:1px solid #334155;border-radius:7px;color:#f1f5f9;font-size:0.78rem;box-sizing:border-box" '+'oninput="rewardMessages[this.dataset.quest]=this.value">'+'</div>'+'</div>';}).join('');}
 async function addQuest(){var inp=document.getElementById('newQuestName');var name=inp.value.trim();if(!name)return;if(questList.indexOf(name)>=0){alert('Cette quête existe déjà.');return;}questList.push(name);inp.value='';await db.from('config').upsert({key:'quests',value:JSON.stringify(questList)});populateQuestSelectors();}
 async function renameQuest(i){var oldName=questList[i];if(!oldName)return;var newName=prompt('Nouveau nom pour la quête :',oldName);if(newName===null)return;newName=newName.trim();if(!newName||newName===oldName)return;if(questList.indexOf(newName)>=0){alert('Cette quête existe déjà.');return;}var oldReward=rewardMessages[oldName]||'';questList[i]=newName;activeQuests=activeQuests.map(function(q){return q===oldName?newName:q;});if(oldName in rewardMessages){delete rewardMessages[oldName];rewardMessages[newName]=oldReward;}var qRes=await db.from('config').upsert({key:'quests',value:JSON.stringify(questList)});if(qRes.error){alert('Erreur renommage quête : '+qRes.error.message);return;}await db.from('config').upsert({key:'activeQuests',value:JSON.stringify(activeQuests)});if(oldReward){await db.from('config').upsert({key:'rewardMessage_'+newName,value:oldReward});}await db.from('config').delete().eq('key','rewardMessage_'+oldName);await db.from('treasures').update({quest:newName}).eq('quest',oldName);populateQuestSelectors();showStatus(document.getElementById('stCfg'),'ok','Quête renommée : '+newName);}
@@ -746,7 +753,7 @@ function _mainOfTab(tab){
   if(tab==='add')return 'add';
   if(tab==='fixed'||tab==='unique'||tab==='solo')return 'treasures';
   if(tab==='qr')return 'qr';
-  if(tab==='players'||tab==='map'||tab==='cfg')return 'pilotage';
+  if(tab==='players'||tab==='map'||tab==='mapFixed'||tab==='cfg')return 'pilotage';
   return 'add';
 }
 function _renderSubTabs(main,activeTab){
@@ -763,12 +770,13 @@ function _renderSubTabs(main,activeTab){
     bar.innerHTML=''
       +'<button id="subTabPlayers" onclick="openSubTab(\'players\')">👥 Joueurs</button>'
       +'<button id="subTabMap" onclick="openSubTab(\'map\')">🗺 Carte</button>'
+      +'<button id="subTabMapFixed" onclick="openSubTab(\'mapFixed\')">📌 Carte fixes</button>'
       +'<button id="subTabCfg" onclick="openSubTab(\'cfg\')">⚙ Config</button>';
   }else{
     bar.classList.remove('active');
     bar.innerHTML='';
   }
-  var map={fixed:'subTabFixed',unique:'subTabUnique',solo:'subTabSolo',players:'subTabPlayers',map:'subTabMap',cfg:'subTabCfg'};
+  var map={fixed:'subTabFixed',unique:'subTabUnique',solo:'subTabSolo',players:'subTabPlayers',map:'subTabMap',mapFixed:'subTabMapFixed',cfg:'subTabCfg'};
   var activeId=map[activeTab];
   if(activeId&&document.getElementById(activeId))document.getElementById(activeId).classList.add('active');
 }
@@ -785,7 +793,7 @@ function showMainTab(main,btn,preferredSubTab){
   }
   if(main==='pilotage'){
     var psub=preferredSubTab||localStorage.getItem('u3dq_admin_sub_pilotage')||'cfg';
-    if(['players','map','cfg'].indexOf(psub)===-1)psub='cfg';
+    if(['players','map','mapFixed','cfg'].indexOf(psub)===-1)psub='cfg';
     showTab(psub);
     localStorage.setItem('u3dq_admin_sub_pilotage',psub);
     _renderSubTabs(main,psub);
@@ -806,7 +814,7 @@ function openSubTab(tab){
   showTab(tab);
   _renderSubTabs(main,tab);
 }
-function showTab(name){document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active');});document.getElementById('panel'+name.charAt(0).toUpperCase()+name.slice(1)).classList.add('active');localStorage.setItem('u3dq_admin_tab',name);if(name==='fixed')loadTreasureList('fixed','fixedList');if(name==='unique')loadTreasureList('unique','uniqueList');if(name==='solo')loadSoloList();if(name==='players')loadPlayers();if(name==='map')initMap();if(name==='cfg'){loadStats();loadScanAttemptsJournal();}if(name==='add')loadQrLov();if(name==='qr')restoreQrGrid();}
+function showTab(name){document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active');});document.getElementById('panel'+name.charAt(0).toUpperCase()+name.slice(1)).classList.add('active');localStorage.setItem('u3dq_admin_tab',name);if(name==='fixed')loadTreasureList('fixed','fixedList');if(name==='unique')loadTreasureList('unique','uniqueList');if(name==='solo')loadSoloList();if(name==='players')loadPlayers();if(name==='map')initMap();if(name==='mapFixed')initMapFixed();if(name==='cfg'){loadStats();loadScanAttemptsJournal();}if(name==='add')loadQrLov();if(name==='qr')restoreQrGrid();}
 var _geoWatchId=null;function startGeo(){var el=document.getElementById('geoBar');el.textContent='Localisation en cours...';if(_geoWatchId!==null){navigator.geolocation.clearWatch(_geoWatchId);}_geoWatchId=navigator.geolocation.watchPosition(function(pos){currentLoc={lat:pos.coords.latitude,lng:pos.coords.longitude,acc:Math.round(pos.coords.accuracy)};el.textContent=currentLoc.lat.toFixed(5)+', '+currentLoc.lng.toFixed(5)+' +/-'+currentLoc.acc+'m';el.style.color='#4ade80';},function(err){var msgs={1:'Permission refusee',2:'Position indisponible',3:'Delai depasse'};el.textContent=(msgs[err.code]||'Erreur GPS')+' - tap pour reessayer';el.style.color='#fb923c';},{enableHighAccuracy:true,timeout:20000,maximumAge:0});}
 function addPhoto(evt){var file=evt.target.files[0];if(!file)return;var reader=new FileReader();reader.onload=function(e){var img=new Image();img.onload=function(){var canvas=document.createElement('canvas');var MAX=800,ratio=Math.min(MAX/img.width,MAX/img.height,1);canvas.width=img.width*ratio;canvas.height=img.height*ratio;canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);photoDataUrls.push(canvas.toDataURL('image/jpeg',0.82));renderPhotoStrip();};img.src=e.target.result;};reader.readAsDataURL(file);evt.target.value='';}
 function _cfgGuideFieldIds(kind){
@@ -1099,6 +1107,36 @@ async function initMap(){
   });
   if(bounds.length)adminMap.fitBounds(bounds,{padding:[30,30]});
   adminMap.invalidateSize();
+}
+async function initMapFixed(){
+  await new Promise(function(r){setTimeout(r,60);});
+  if(!adminMapFixed){
+    var center=getMapCenterValue()||'48.8566,2.3522';
+    var parts=center.split(',');
+    adminMapFixed=L.map('adminMapFixed').setView([parseFloat(parts[0]),parseFloat(parts[1])],14);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'OpenStreetMap'}).addTo(adminMapFixed);
+  }
+  mapLayersFixed.forEach(function(l){adminMapFixed.removeLayer(l);});
+  mapLayersFixed=[];
+
+  var questFilterMap=document.getElementById('filterQuestMapFixed')?document.getElementById('filterQuestMapFixed').value:'';
+  var q=db.from('treasures').select('*').eq('type','fixed');
+  if(questFilterMap)q=q.eq('quest',questFilterMap);
+  var res=await q;
+  if(!res.data||!res.data.length){adminMapFixed.invalidateSize();return;}
+  var bounds=[];
+  res.data.forEach(function(t){
+    var found=t.found_by&&t.found_by.length>0;
+    var color=found?'#4ade80':'#60a5fa';
+    var icon=L.divIcon({html:'<div style="background:'+color+';width:14px;height:14px;border-radius:50%;border:2px solid #fff"></div>',className:'',iconSize:[14,14],iconAnchor:[7,7]});
+    var popPhotos=getPhotoUrls(t.photo_url).map(function(u){return'<img src="'+u+'" style="width:100%;max-height:100px;object-fit:cover;border-radius:5px;margin-bottom:4px;display:block">';}).join('');
+    var popHtml='<div style="min-width:170px;font-size:0.85rem">'+popPhotos+'<b>'+(t.label||'Balise fixe')+'</b><br><span style="color:#888;font-size:0.78em">📌 Fixe</span>'+(t.hint?'<br><span style="color:#93c5fd;font-size:0.8em">💡 '+t.hint+'</span>':'')+(found?'<br><span style="color:#4ade80;font-size:0.78em">✓ Trouvé par '+t.found_by+'</span>':'')+'<br><span style="color:#475569;font-size:0.72em">'+t.id+'</span>'
+      +'<br><button onclick="moveOnMap(\''+t.id+'\','+t.lat+','+t.lng+',\''+(t.label||'').replace(/'/g,"\\'")+'\')" style="margin-top:6px;width:100%;padding:5px;background:#1c3351;border:none;border-radius:6px;color:#7dd3fc;cursor:pointer;font-size:0.78rem;font-weight:600">📍 Déplacer</button></div>';
+    var m=L.marker([t.lat,t.lng],{icon:icon}).addTo(adminMapFixed).bindPopup(popHtml,{maxWidth:220});
+    mapLayersFixed.push(m);bounds.push([t.lat,t.lng]);
+  });
+  if(bounds.length)adminMapFixed.fitBounds(bounds,{padding:[30,30]});
+  adminMapFixed.invalidateSize();
 }
 function moveOnMap(id,lat,lng,label){
   relocate={id:id,lat:lat,lng:lng,label:label};
