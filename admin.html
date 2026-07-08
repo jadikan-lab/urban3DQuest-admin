@@ -183,6 +183,7 @@
   <div class="header-status" aria-label="Contexte d'administration">
     <span class="context-chip role">ADMIN</span>
     <span class="context-chip env" id="envChip">PROD</span>
+    <span class="context-chip" id="buildChip">BUILD</span>
   </div>
   <div class="env-switch" aria-label="Choix environnement">
     <button id="envProdBtn" onclick="switchSupabaseEnv('prod')">PROD</button>
@@ -645,12 +646,15 @@ function buildFoundQrUrl(id,meta){
   return (isSoloId||isSoloMeta||isSoloBatch)?buildSoloLandingUrl(id):buildGameUrl('found',id);
 }
 var ADMIN_UI_VERSION='v4.1';
+var ADMIN_BUILD_VERSION='2d1a660';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,prelaunchEnabled=false,egressEmergency=false,realtimeEnabled=false,photoDataUrls=[],adminMap=null,mapLayers=[],adminMapFixed=null,mapLayersFixed=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
 var _adminTitle=document.getElementById('adminTitle');
-if(_adminTitle)_adminTitle.textContent='Urban3DQuest Admin · '+ADMIN_UI_VERSION+' · '+SUPABASE_ENV.label;
+if(_adminTitle)_adminTitle.textContent='Urban3DQuest Admin · '+ADMIN_UI_VERSION+' · '+ADMIN_BUILD_VERSION+' · '+SUPABASE_ENV.label;
 var _envChip=document.getElementById('envChip');
 if(_envChip)_envChip.textContent=SUPABASE_ENV.label;
+var _buildChip=document.getElementById('buildChip');
+if(_buildChip){_buildChip.textContent=ADMIN_BUILD_VERSION;_buildChip.title='Build admin déployé';}
 var _envProdBtn=document.getElementById('envProdBtn');
 if(_envProdBtn&&SUPABASE_ENV.name==='prod')_envProdBtn.classList.add('active');
 var _envStgBtn=document.getElementById('envStgBtn');
