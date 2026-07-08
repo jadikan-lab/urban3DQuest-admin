@@ -1050,7 +1050,7 @@ async function loadSoloList(){
       +'<div class="solo-top">'
       +'<span class="solo-id">'+escHtml(t.id)+'</span>'
       +'<span class="solo-flash-num '+countClass+'" title="Nombre de flashs">'+count+'</span>'
-      +'<button class="solo-reset" '+(found?'':'disabled')+' onclick="resetSoloTreasure(\''+escHtml(t.id).replace(/'/g,"\\'")+'\')">↺</button>'
+      +'<button class="solo-reset" '+((found||openCount>0)?'':'disabled')+' onclick="resetSoloTreasure(\''+escHtml(t.id).replace(/'/g,"\\'")+'\')">↺</button>'
       +'</div>'
       +'<div class="solo-line dim">'+questTxt+' · '+(t.visible?'actif':'masque')+'</div>'
       +'<div class="solo-line '+(found?'ok':'dim')+'">par: '+foundBy+'</div>'
@@ -1099,7 +1099,7 @@ async function toggleVis2(id,current,type){
 }
 async function deleteTreasure(id,label,type){if(!confirm('Supprimer ?'))return;await db.from('treasures').delete().eq('id',id);loadTreasureList(type||'fixed',type==='unique'?'uniqueList':'fixedList');}
 async function resetTreasure(id,type){if(!confirm('Remettre cette balise comme "non trouvée" ?'))return;var payload={found_by:'',found_at:null};if(type==='unique'){payload.visible=false;payload.activated_at=null;}await db.from('treasures').update(payload).eq('id',id);await db.from('events').delete().eq('treasure_id',id);loadTreasureList(type||'fixed',type==='unique'?'uniqueList':'fixedList');}
-async function resetSoloTreasure(id){if(!confirm('Déflasher ce QR solo ?'))return;var upd=await db.from('treasures').update({found_by:'',found_at:null}).eq('id',id).eq('solo_hidden',true);if(upd.error){alert('Erreur déflash: '+upd.error.message);return;}var del=await db.from('events').delete().eq('treasure_id',id);if(del.error){alert('Erreur suppression événement: '+del.error.message);return;}loadSoloList();}
+async function resetSoloTreasure(id){if(!confirm('Effacer ce scan Solo (validation + scans non validés) ?'))return;var upd=await db.from('treasures').update({found_by:'',found_at:null}).eq('id',id).eq('solo_hidden',true);if(upd.error){alert('Erreur déflash: '+upd.error.message);return;}var del=await db.from('events').delete().eq('treasure_id',id);if(del.error){alert('Erreur suppression événement: '+del.error.message);return;}var delScan=await db.from('scan_attempts').delete().eq('treasure_id',id).in('status',['qr_open','qr_open_checkin']);if(delScan.error){alert('Erreur suppression scans non validés: '+delScan.error.message);return;}loadSoloList();}
 async function initMap(){
   await new Promise(function(r){setTimeout(r,60);});
   if(!adminMap){
