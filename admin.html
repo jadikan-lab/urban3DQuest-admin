@@ -630,14 +630,15 @@ var SUPABASE_URL=SUPABASE_ENV.url;
 var SUPABASE_KEY=SUPABASE_ENV.key;
 var GAME_BASE_URL='https://www.urban3Dquest.fr';
 var SOLO_LANDING_BASE_URL='https://www.jadikan-lp.com/LandingGameArles/';
+var SOLO_LANDING_URL=SOLO_LANDING_BASE_URL;
 // <SYNC:GAME_WEB_VERSION_START>
 var GAME_WEB_VERSION='a852a91'; // cache-busting for mobile scans — synced from urban3DQuest HEAD
 // <SYNC:GAME_WEB_VERSION_END>
 function buildGameUrl(param,value){return GAME_BASE_URL+'/?'+param+'='+value+'&v='+GAME_WEB_VERSION;}
 function buildGameUrlPrint(param,value){return GAME_BASE_URL+'/?'+param+'='+value;}
-function buildSoloLandingTarget(value){return SOLO_LANDING_BASE_URL+'?found='+encodeURIComponent(value);}
+function buildSoloLandingTarget(value){return SOLO_LANDING_URL+'?found='+encodeURIComponent(value);}
 function buildSoloLandingUrl(value){return GAME_BASE_URL+'/?found='+encodeURIComponent(value)+'&guest_redirect='+encodeURIComponent(buildSoloLandingTarget(value))+'&v='+GAME_WEB_VERSION;}
-function buildLandingFoundUrl(value){return buildSoloLandingTarget(value);}
+function buildLandingFoundUrl(value){return GAME_BASE_URL+'/?found='+encodeURIComponent(value)+'&guest_redirect='+encodeURIComponent(buildSoloLandingTarget(value))+'&v='+GAME_WEB_VERSION;}
 function buildFoundQrUrl(id,meta){
   var m=meta||{};
   var sid=String(id||'').toUpperCase();
@@ -974,16 +975,7 @@ async function loadSoloList(){
   var questFilter=_syncSoloQuestFilter(rows);
   if(questFilter)rows=rows.filter(function(t){return String(t.quest||'').trim()===questFilter;});
   var sortMode=((document.getElementById('sortSolo')||{}).value)||'quest_asc';
-  rows.sort(function(a,b){
-    var af=!!(String(a.found_by||'').trim()||a.found_at);
-    var bf=!!(String(b.found_by||'').trim()||b.found_at);
-    if(af!==bf)return af?-1:1;
-    var qa=String(a.quest||'').trim().toLowerCase();
-    var qb=String(b.quest||'').trim().toLowerCase();
-    var qcmp=qa.localeCompare(qb,'fr',{sensitivity:'base'});
-    if(qcmp!==0)return sortMode==='quest_desc'?-qcmp:qcmp;
-    return String(a.id||'').localeCompare(String(b.id||''),'fr',{sensitivity:'base'});
-  });
+  var latestActivityById={};
   if(!rows.length){el.innerHTML='<p style="color:#475569;text-align:center;padding:40px">Aucun QR solo pour le moment.</p>';return;}
   var scannedCount=rows.filter(function(t){return !!(String(t.found_by||'').trim()||t.found_at);}).length;
   var flashCountById={};
@@ -1024,6 +1016,24 @@ async function loadSoloList(){
     var openCount=qrOpenCountById[t.id]||0;
     return found||openCount>0;
   }).length;
+  rows.forEach(function(t){
+    var foundAt=String(t.found_at||'');
+    var latestOpen=qrOpenLatestById[t.id]||'';
+    latestActivityById[t.id]=foundAt>latestOpen?foundAt:latestOpen;
+  });
+  rows.sort(function(a,b){
+    var at=latestActivityById[a.id]||'';
+    var bt=latestActivityById[b.id]||'';
+    if(at!==bt)return bt.localeCompare(at,'fr',{sensitivity:'base'});
+    var af=!!(String(a.found_by||'').trim()||a.found_at);
+    var bf=!!(String(b.found_by||'').trim()||b.found_at);
+    if(af!==bf)return af?-1:1;
+    var qa=String(a.quest||'').trim().toLowerCase();
+    var qb=String(b.quest||'').trim().toLowerCase();
+    var qcmp=qa.localeCompare(qb,'fr',{sensitivity:'base'});
+    if(qcmp!==0)return sortMode==='quest_desc'?-qcmp:qcmp;
+    return String(a.id||'').localeCompare(String(b.id||''),'fr',{sensitivity:'base'});
+  });
   var html=rows.map(function(t){
     var foundByTxt=String(t.found_by||'').trim();
     var found=!!(foundByTxt||t.found_at);
@@ -1320,7 +1330,8 @@ async function loadConfig(){
   _setCfgGuidePreview('prelaunch',cfg.prelaunchImageUrl||'');
 
   if(cfg.gameCode)document.getElementById('cfgGameCode').value=cfg.gameCode;
-  document.getElementById('cfgGuestLandingUrl').value=cfg.guestLandingUrl||'https://jadikan.carrd.co/';
+  SOLO_LANDING_URL=(cfg.guestLandingUrl||'https://jadikan.carrd.co/').trim()||SOLO_LANDING_BASE_URL;
+  document.getElementById('cfgGuestLandingUrl').value=SOLO_LANDING_URL;
   _setCfgGuidePreview('flash',cfg.qrGuideFlashUrl||'');
   _setCfgGuidePreview('fixed',cfg.qrGuideFixedUrl||'');
   _setCfgGuidePreview('generic',cfg.qrGuideGenericUrl||'');
