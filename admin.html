@@ -984,6 +984,7 @@ async function loadSoloList(){
   var flashCountById={};
   var qrOpenCountById={};
   var qrOpenLatestById={};
+  var scanAttemptsError='';
   var ids=rows.map(function(t){return t.id;}).filter(Boolean);
   if(ids.length){
     var ev=await db.from('events').select('treasure_id').in('treasure_id',ids);
@@ -1008,6 +1009,8 @@ async function loadSoloList(){
         var cur=String(s.created_at||'');
         if(cur&&(!prev||cur>prev))qrOpenLatestById[k]=cur;
       });
+    }else{
+      scanAttemptsError=String(sa.error.message||'Accès refusé à scan_attempts');
     }
   }
   scannedCount=rows.filter(function(t){
@@ -1054,7 +1057,13 @@ async function loadSoloList(){
       +(scannedNotValidated?'<div class="solo-line" style="color:#fdba74">scan non validé · '+openCount+latestOpenTxt+'</div>':'')
       +'</div>';
   }).join('');
-  el.innerHTML='<div style="font-size:0.68rem;color:#94a3b8;margin:0 0 6px 2px">'+scannedCount+' scannés / '+rows.length+'</div><div class="solo-grid">'+html+'</div>';
+  var telemetryWarning='';
+  if(scanAttemptsError){
+    telemetryWarning='<div style="font-size:0.68rem;color:#fbbf24;background:rgba(120,53,15,.2);border:1px solid rgba(251,191,36,.35);border-radius:8px;padding:6px 8px;margin:0 0 8px 2px">'
+      +'⚠︎ Télémétrie scans non validés indisponible: '+escHtml(scanAttemptsError)
+      +'</div>';
+  }
+  el.innerHTML=telemetryWarning+'<div style="font-size:0.68rem;color:#94a3b8;margin:0 0 6px 2px">'+scannedCount+' scannés / '+rows.length+'</div><div class="solo-grid">'+html+'</div>';
 }
 async function loadPlayers(){var el=document.getElementById('playersList');el.innerHTML='<p style="color:#475569;text-align:center;padding:40px">Chargement…</p>';var rp=await db.from('players').select('pseudo,score,found_count,joined_at').order('found_count',{ascending:false});var re=await db.from('events').select('pseudo,treasure_id,treasure_type,created_at').order('created_at',{ascending:true});var rt=await db.from('treasures').select('id,label,type');if(rp.error){el.innerHTML='<p style="color:#f87171;padding:16px">'+escHtml(rp.error.message)+'</p>';return;}if(!rp.data||!rp.data.length){el.innerHTML='<p style="color:#475569;text-align:center;padding:40px">Aucun joueur inscrit</p>';return;}var tLabels={};(rt.data||[]).forEach(function(t){tLabels[t.id]=escHtml(t.label||(t.type==='fixed'?'Balise fixe':'Trésor unique'));});var evByPlayer={};(re.data||[]).forEach(function(e){if(!evByPlayer[e.pseudo])evByPlayer[e.pseudo]=[];evByPlayer[e.pseudo].push(e);});var medals=['🥇','🥈','🥉'];el.innerHTML=rp.data.map(function(p,i){var evs=evByPlayer[p.pseudo]||[];var fixedCount=evs.filter(function(e){return e.treasure_type==='fixed';}).length;var uniqueCount=evs.filter(function(e){return e.treasure_type==='unique';}).length;var joinDate=new Date(p.joined_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});var badges=evs.map(function(e){return'<span class="p-found-badge" title="'+new Date(e.created_at).toLocaleTimeString('fr-FR')+'">'+(e.treasure_type==='fixed'?'📌':'🎁')+(tLabels[e.treasure_id]||escHtml(e.treasure_id))+'</span>';}).join('');var scoreLabel=fixedCount+' 📌'+(uniqueCount?' · '+uniqueCount+' 🎁':'');var sp=p.pseudo.replace(/'/g,"\\'");return'<div class="p-card"><div class="p-head"><span style="font-size:1.2rem">'+(medals[i]||'#'+(i+1))+'</span><span class="p-name">'+escHtml(p.pseudo)+'</span><span class="p-score">'+scoreLabel+'</span><button onclick="deletePlayer(\''+sp+'\')" title="Supprimer ce joueur" style="margin-left:auto;padding:4px 9px;background:#450a0a;border:none;border-radius:6px;color:#f87171;cursor:pointer;font-size:0.75rem;flex-shrink:0">🗑</button></div><div style="font-size:0.72rem;color:#475569;margin-bottom:6px">Inscrit le '+joinDate+'</div>'+(badges?'<div class="p-found-list">'+badges+'</div>':'<div style="font-size:0.75rem;color:#334155">Aucun trésor trouvé</div>')+'</div>';}).join('');}
 async function validateDeposit(id){return toggleVis2(id,false,'unique');}
