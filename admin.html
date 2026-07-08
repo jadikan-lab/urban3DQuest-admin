@@ -382,6 +382,10 @@
     <div style="font-size:0.72rem;color:#475569;margin-top:4px">Si la date est dans le futur, les joueurs connectés voient un décompte avant accès au jeu.</div>
   </div>
   <div class="field">
+    <label>Titre écran d'attente</label>
+    <input type="text" id="cfgPrelaunchTitle" placeholder="Arles 3D Quest 2026">
+  </div>
+  <div class="field">
     <label>Message pré-lancement (optionnel)</label>
     <textarea id="cfgPrelaunchMessage" placeholder="Le jeu ouvre bientôt. Ton compte est prêt."></textarea>
   </div>
@@ -978,6 +982,8 @@ async function loadSoloList(){
   if(!rows.length){el.innerHTML='<p style="color:#475569;text-align:center;padding:40px">Aucun QR solo pour le moment.</p>';return;}
   var scannedCount=rows.filter(function(t){return !!(String(t.found_by||'').trim()||t.found_at);}).length;
   var flashCountById={};
+  var qrOpenCountById={};
+  var qrOpenLatestById={};
   var ids=rows.map(function(t){return t.id;}).filter(Boolean);
   if(ids.length){
     var ev=await db.from('events').select('treasure_id').in('treasure_id',ids);
@@ -987,10 +993,35 @@ async function loadSoloList(){
         flashCountById[k]=(flashCountById[k]||0)+1;
       });
     }
+
+    // Also include raw QR opens (without gameplay validation) for Solo visibility.
+    var sa=await db.from('scan_attempts')
+      .select('treasure_id,status,created_at')
+      .in('treasure_id',ids)
+      .in('status',['qr_open','qr_open_checkin']);
+    if(!sa.error){
+      (sa.data||[]).forEach(function(s){
+        var k=String(s.treasure_id||'');
+        if(!k)return;
+        qrOpenCountById[k]=(qrOpenCountById[k]||0)+1;
+        var prev=qrOpenLatestById[k]||'';
+        var cur=String(s.created_at||'');
+        if(cur&&(!prev||cur>prev))qrOpenLatestById[k]=cur;
+      });
+    }
   }
+  scannedCount=rows.filter(function(t){
+    var foundByTxt=String(t.found_by||'').trim();
+    var found=!!(foundByTxt||t.found_at);
+    var openCount=qrOpenCountById[t.id]||0;
+    return found||openCount>0;
+  }).length;
   var html=rows.map(function(t){
     var foundByTxt=String(t.found_by||'').trim();
     var found=!!(foundByTxt||t.found_at);
+    var openCount=qrOpenCountById[t.id]||0;
+    var latestOpen=qrOpenLatestById[t.id]||'';
+    var scannedNotValidated=!found&&openCount>0;
     var foundByClean=foundByTxt;
     var foundCountFromBy=0;
     var byMatch=foundByTxt.match(/^(.*)#(\d+)$/);
@@ -1001,8 +1032,17 @@ async function loadSoloList(){
     var foundBy=found?(foundByClean?escHtml(foundByClean):'inconnu'):'-';
     var count=flashCountById[t.id]||0;
     if(count===0&&found)count=foundCountFromBy||1;
+    if(openCount>count)count=openCount;
     var countClass=count===0?'zero':(count<3?'low':'high');
     var questTxt=t.quest?escHtml(t.quest):'Sans quete';
+    var latestOpenTxt='';
+    if(scannedNotValidated&&latestOpen){
+      try{
+        latestOpenTxt=' · '+new Date(latestOpen).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      }catch(_e){
+        latestOpenTxt='';
+      }
+    }
     return '<div class="solo-card'+(found?' found':'')+'">'
       +'<div class="solo-top">'
       +'<span class="solo-id">'+escHtml(t.id)+'</span>'
@@ -1011,6 +1051,7 @@ async function loadSoloList(){
       +'</div>'
       +'<div class="solo-line dim">'+questTxt+' · '+(t.visible?'actif':'masque')+'</div>'
       +'<div class="solo-line '+(found?'ok':'dim')+'">par: '+foundBy+'</div>'
+      +(scannedNotValidated?'<div class="solo-line" style="color:#fdba74">scan non validé · '+openCount+latestOpenTxt+'</div>':'')
       +'</div>';
   }).join('');
   el.innerHTML='<div style="font-size:0.68rem;color:#94a3b8;margin:0 0 6px 2px">'+scannedCount+' scannés / '+rows.length+'</div><div class="solo-grid">'+html+'</div>';
@@ -1260,6 +1301,7 @@ async function loadConfig(){
       document.getElementById('cfgLaunchAt').value=ld.getFullYear()+'-'+padl(ld.getMonth()+1)+'-'+padl(ld.getDate())+'T'+padl(ld.getHours())+':'+padl(ld.getMinutes());
     }
   }
+  document.getElementById('cfgPrelaunchTitle').value=cfg.prelaunchTitle||'Arles 3D Quest 2026';
   document.getElementById('cfgPrelaunchMessage').value=cfg.prelaunchMessage||'';
   _setCfgGuidePreview('prelaunch',cfg.prelaunchImageUrl||'');
 
@@ -1321,6 +1363,7 @@ async function saveConfig(){
   var launchAtVal=document.getElementById('cfgLaunchAt').value;
   await db.from('config').upsert({key:'prelaunchEnabled',value:String(prelaunchEnabled)});
   await db.from('config').upsert({key:'launchAt',value:launchAtVal?new Date(launchAtVal).toISOString():''});
+  await db.from('config').upsert({key:'prelaunchTitle',value:(document.getElementById('cfgPrelaunchTitle').value||'').trim()});
   await db.from('config').upsert({key:'prelaunchMessage',value:(document.getElementById('cfgPrelaunchMessage').value||'').trim()});
   await db.from('config').upsert({key:'prelaunchImageUrl',value:(document.getElementById('cfgPrelaunchImageUrl').value||'').trim()});
 
