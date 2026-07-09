@@ -653,7 +653,7 @@ function buildFoundQrUrl(id,meta){
   return (isSoloId||isSoloMeta||isSoloBatch)?buildSoloLandingUrl(id):buildGameUrl('found',id);
 }
 var ADMIN_UI_VERSION='v4.1';
-var ADMIN_BUILD_VERSION='20260709-pilotage-filters';
+var ADMIN_BUILD_VERSION='20260709-pilotage-family-filters';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,prelaunchEnabled=false,egressEmergency=false,realtimeEnabled=false,photoDataUrls=[],adminMap=null,mapLayers=[],adminMapFixed=null,mapLayersFixed=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
 var _adminTitle=document.getElementById('adminTitle');
@@ -1465,7 +1465,14 @@ async function loadLandingSummary(){
 }
 var _landingEntriesCache=[];
 var _landingFilterDay='';
+var _landingFilterFamily='';
 var _landingFilterCode='';
+function _landingCodeFamily(foundRaw){
+  var found=String(foundRaw||'').trim().toUpperCase();
+  if(found.indexOf('LUX-')===0)return 'lux';
+  if(found.indexOf('FIX-')===0)return 'fix';
+  return 'other';
+}
 function _landingDayKey(createdAt){
   try{
     var d=new Date(String(createdAt||''));
@@ -1491,22 +1498,37 @@ function renderLandingEntriesTable(){
   var tbody=document.getElementById('landingEntriesTbody');
   if(!tbody)return;
   var daySel=document.getElementById('landingDayFilter');
+  var familySel=document.getElementById('landingFamilyFilter');
   var codeSel=document.getElementById('landingCodeFilter');
   var day=daySel?String(daySel.value||''):'';
+  var family=familySel?String(familySel.value||''):'';
   var code=codeSel?String(codeSel.value||''):'';
   _landingFilterDay=day;
+  _landingFilterFamily=family;
   _landingFilterCode=code;
 
   var rows=(_landingEntriesCache||[]).filter(function(e){
     var dayOk=!day||_landingDayKey(e.created_at)===day;
     var found=String(e.found||'').trim();
+    var familyOk=!family||_landingCodeFamily(found)===family;
     var codeKey=found?found:'__none__';
     var codeOk=!code||codeKey===code;
-    return dayOk&&codeOk;
+    return dayOk&&familyOk&&codeOk;
   });
 
   var countEl=document.getElementById('landingEntriesCount');
-  if(countEl)countEl.textContent=rows.length+' / '+(_landingEntriesCache||[]).length;
+  if(countEl)countEl.textContent=rows.length+' connexion'+(rows.length>1?'s':'');
+  var uniqCodesEl=document.getElementById('landingEntriesCodesCount');
+  if(uniqCodesEl){
+    var uniq={};
+    rows.forEach(function(e){
+      var found=String(e.found||'').trim();
+      var codeKey=found?found:'__none__';
+      uniq[codeKey]=1;
+    });
+    var uniqCount=Object.keys(uniq).length;
+    uniqCodesEl.textContent=uniqCount+' code'+(uniqCount>1?'s':'');
+  }
 
   if(!rows.length){
     tbody.innerHTML='<tr><td colspan="2" style="padding:8px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">Aucune connexion pour ces filtres.</td></tr>';
@@ -1588,10 +1610,16 @@ async function loadStats(){
       +'<label style="font-size:0.72rem;color:#94a3b8">Jour<br><select id="landingDayFilter" onchange="renderLandingEntriesTable()" style="margin-top:4px;min-width:170px;padding:7px 9px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:0.78rem"><option value="">Tous les jours</option>'
       +dayValues.map(function(v){return '<option value="'+escHtml(v)+'"'+(_landingFilterDay===v?' selected':'')+'>'+escHtml(v)+'</option>';}).join('')
       +'</select></label>'
-      +'<label style="font-size:0.72rem;color:#94a3b8">Code<br><select id="landingCodeFilter" onchange="renderLandingEntriesTable()" style="margin-top:4px;min-width:190px;padding:7px 9px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:0.78rem"><option value="">Tous les codes</option>'
+      +'<label style="font-size:0.72rem;color:#94a3b8">Type de code<br><select id="landingFamilyFilter" onchange="renderLandingEntriesTable()" style="margin-top:4px;min-width:155px;padding:7px 9px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:0.78rem">'
+      +'<option value=""'+(_landingFilterFamily===''?' selected':'')+'>Tout</option>'
+      +'<option value="lux"'+(_landingFilterFamily==='lux'?' selected':'')+'>LUX</option>'
+      +'<option value="fix"'+(_landingFilterFamily==='fix'?' selected':'')+'>FIX</option>'
+      +'<option value="other"'+(_landingFilterFamily==='other'?' selected':'')+'>Autre</option>'
+      +'</select></label>'
+      +'<label style="font-size:0.72rem;color:#94a3b8">Code exact<br><select id="landingCodeFilter" onchange="renderLandingEntriesTable()" style="margin-top:4px;min-width:190px;padding:7px 9px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:0.78rem"><option value="">Tous les codes</option>'
       +codeValues.map(function(v){var txt=v==='__none__'?'visite sans code':v;return '<option value="'+escHtml(v)+'"'+(_landingFilterCode===v?' selected':'')+'>'+escHtml(txt)+'</option>';}).join('')
       +'</select></label>'
-      +'<span style="margin-left:auto;font-size:0.72rem;color:#94a3b8">Résultats: <strong id="landingEntriesCount" style="color:#cbd5e1">—</strong></span>'
+      +'<span style="margin-left:auto;font-size:0.72rem;color:#94a3b8">Total filtré: <strong id="landingEntriesCount" style="color:#cbd5e1">—</strong> · Codes: <strong id="landingEntriesCodesCount" style="color:#cbd5e1">—</strong></span>'
     +'</div>'
     +'<div style="margin-top:6px;background:#0f172a;border:1px solid #1e293b;border-radius:10px;max-height:260px;overflow:auto">'
     +'<table style="width:100%;border-collapse:collapse">'
