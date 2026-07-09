@@ -653,7 +653,7 @@ function buildFoundQrUrl(id,meta){
   return (isSoloId||isSoloMeta||isSoloBatch)?buildSoloLandingUrl(id):buildGameUrl('found',id);
 }
 var ADMIN_UI_VERSION='v4.1';
-var ADMIN_BUILD_VERSION='20260709-pilotage';
+var ADMIN_BUILD_VERSION='20260709-pilotage-filters';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,prelaunchEnabled=false,egressEmergency=false,realtimeEnabled=false,photoDataUrls=[],adminMap=null,mapLayers=[],adminMapFixed=null,mapLayersFixed=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
 var _adminTitle=document.getElementById('adminTitle');
@@ -1463,6 +1463,62 @@ async function loadLandingSummary(){
   }catch(_e){}
   return {available:false,total:0,withFound:0,withoutFound:0,lastAt:'',lastFound:'',entries:[]};
 }
+var _landingEntriesCache=[];
+var _landingFilterDay='';
+var _landingFilterCode='';
+function _landingDayKey(createdAt){
+  try{
+    var d=new Date(String(createdAt||''));
+    if(!isFinite(d.getTime()))return '';
+    var y=d.getFullYear();
+    var m=String(d.getMonth()+1).padStart(2,'0');
+    var day=String(d.getDate()).padStart(2,'0');
+    return y+'-'+m+'-'+day;
+  }catch(_e){
+    return '';
+  }
+}
+function _fmtLandingDateTime(createdAt){
+  try{
+    var d=new Date(String(createdAt||''));
+    if(!isFinite(d.getTime()))return String(createdAt||'—');
+    return d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  }catch(_e){
+    return String(createdAt||'—');
+  }
+}
+function renderLandingEntriesTable(){
+  var tbody=document.getElementById('landingEntriesTbody');
+  if(!tbody)return;
+  var daySel=document.getElementById('landingDayFilter');
+  var codeSel=document.getElementById('landingCodeFilter');
+  var day=daySel?String(daySel.value||''):'';
+  var code=codeSel?String(codeSel.value||''):'';
+  _landingFilterDay=day;
+  _landingFilterCode=code;
+
+  var rows=(_landingEntriesCache||[]).filter(function(e){
+    var dayOk=!day||_landingDayKey(e.created_at)===day;
+    var found=String(e.found||'').trim();
+    var codeKey=found?found:'__none__';
+    var codeOk=!code||codeKey===code;
+    return dayOk&&codeOk;
+  });
+
+  var countEl=document.getElementById('landingEntriesCount');
+  if(countEl)countEl.textContent=rows.length+' / '+(_landingEntriesCache||[]).length;
+
+  if(!rows.length){
+    tbody.innerHTML='<tr><td colspan="2" style="padding:8px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">Aucune connexion pour ces filtres.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML=rows.map(function(e){
+    var ts=_fmtLandingDateTime(e.created_at);
+    var found=String(e.found||'').trim();
+    return '<tr><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#cbd5e1">'+escHtml(ts)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;font-family:var(--mono);color:'+(found?'#86efac':'#94a3b8')+'">'+escHtml(found||'visite sans code')+'</td></tr>';
+  }).join('');
+}
 async function loadStats(){
   var r1=await db.from('treasures').select('id,type,found_by');
   var r2=await db.from('players').select('pseudo,found_count,score');
@@ -1490,6 +1546,24 @@ async function loadStats(){
     }
   }
   var entries=(landing.entries||[]).slice().reverse();
+  _landingEntriesCache=entries;
+  var dayValues=[];
+  var daySeen={};
+  var codeValues=[];
+  var codeSeen={};
+  entries.forEach(function(e){
+    var dk=_landingDayKey(e.created_at);
+    if(dk&&!daySeen[dk]){daySeen[dk]=1;dayValues.push(dk);} 
+    var found=String(e.found||'').trim();
+    var ck=found?found:'__none__';
+    if(!codeSeen[ck]){codeSeen[ck]=1;codeValues.push(ck);} 
+  });
+  dayValues.sort(function(a,b){return b.localeCompare(a);});
+  codeValues.sort(function(a,b){
+    if(a==='__none__')return 1;
+    if(b==='__none__')return -1;
+    return a.localeCompare(b,'fr',{sensitivity:'base'});
+  });
   var summaryTable=''
     +'<table style="width:100%;border-collapse:collapse;background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden">'
     +'<thead><tr style="background:#111827"><th style="text-align:left;padding:8px 10px;font-size:0.72rem;color:#94a3b8">Indicateur</th><th style="text-align:right;padding:8px 10px;font-size:0.72rem;color:#94a3b8">Valeur</th></tr></thead>'
@@ -1510,10 +1584,19 @@ async function loadStats(){
 
   var entriesTable=''
     +'<div style="margin-top:10px;font-size:0.72rem;color:#94a3b8">Connexions landing (date et heure)</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-top:8px">'
+      +'<label style="font-size:0.72rem;color:#94a3b8">Jour<br><select id="landingDayFilter" onchange="renderLandingEntriesTable()" style="margin-top:4px;min-width:170px;padding:7px 9px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:0.78rem"><option value="">Tous les jours</option>'
+      +dayValues.map(function(v){return '<option value="'+escHtml(v)+'"'+(_landingFilterDay===v?' selected':'')+'>'+escHtml(v)+'</option>';}).join('')
+      +'</select></label>'
+      +'<label style="font-size:0.72rem;color:#94a3b8">Code<br><select id="landingCodeFilter" onchange="renderLandingEntriesTable()" style="margin-top:4px;min-width:190px;padding:7px 9px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:0.78rem"><option value="">Tous les codes</option>'
+      +codeValues.map(function(v){var txt=v==='__none__'?'visite sans code':v;return '<option value="'+escHtml(v)+'"'+(_landingFilterCode===v?' selected':'')+'>'+escHtml(txt)+'</option>';}).join('')
+      +'</select></label>'
+      +'<span style="margin-left:auto;font-size:0.72rem;color:#94a3b8">Résultats: <strong id="landingEntriesCount" style="color:#cbd5e1">—</strong></span>'
+    +'</div>'
     +'<div style="margin-top:6px;background:#0f172a;border:1px solid #1e293b;border-radius:10px;max-height:260px;overflow:auto">'
     +'<table style="width:100%;border-collapse:collapse">'
     +'<thead><tr style="position:sticky;top:0;background:#111827"><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Date/heure</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Code</th></tr></thead>'
-    +'<tbody>'
+    +'<tbody id="landingEntriesTbody">'
     +(landing.available
       ?(entries.length?entries.map(function(e){
           var ts='—';
@@ -1534,6 +1617,7 @@ async function loadStats(){
     +summaryTable
     +entriesTable
     +'<button class="btn" style="background:#1e293b;border:1px solid #334155;margin-top:12px;font-size:0.82rem;padding:10px" onclick="exportCSV()">⬇ Exporter events.csv (inclut duree_sec)</button>';
+  renderLandingEntriesTable();
 }
 
 async function loadScanAttemptsJournal(){
