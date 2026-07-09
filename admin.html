@@ -653,7 +653,7 @@ function buildFoundQrUrl(id,meta){
   return (isSoloId||isSoloMeta||isSoloBatch)?buildSoloLandingUrl(id):buildGameUrl('found',id);
 }
 var ADMIN_UI_VERSION='v4.1';
-var ADMIN_BUILD_VERSION='20260709-pilotage-solo-unique-scans';
+var ADMIN_BUILD_VERSION='20260709-pilotage-click-found-ids';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,prelaunchEnabled=false,egressEmergency=false,realtimeEnabled=false,photoDataUrls=[],adminMap=null,mapLayers=[],adminMapFixed=null,mapLayersFixed=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
 var _adminTitle=document.getElementById('adminTitle');
@@ -1471,6 +1471,7 @@ var _statsFilterQuest='';
 var _statsFilterPeriod='all';
 var _statsFilterFrom='';
 var _statsFilterTo='';
+var _statsFoundDetails={fixed:[],unique:[]};
 function _statsWindow(){
   var now=new Date();
   if(_statsFilterPeriod==='today'){
@@ -1504,6 +1505,39 @@ function onStatsFilterChange(){
   _statsFilterFrom=f?String(f.value||''):'';
   _statsFilterTo=t?String(t.value||''):'';
   loadStats();
+}
+function openStatsFoundDetails(kind){
+  var box=document.getElementById('statsFoundDetailsBox');
+  if(!box)return;
+  var ids=((_statsFoundDetails&&_statsFoundDetails[kind])||[]).slice().sort(function(a,b){
+    return String(a||'').localeCompare(String(b||''),'fr',{sensitivity:'base'});
+  });
+  var title=kind==='fixed'?'Balises fixes trouvées':'Trésors uniques trouvés';
+  if(!ids.length){
+    box.innerHTML='<div style="margin-top:8px;background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:10px">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'
+      +'<strong style="font-size:0.78rem;color:#cbd5e1">'+title+'</strong>'
+      +'<button type="button" onclick="closeStatsFoundDetails()" style="background:#1e293b;border:1px solid #334155;color:#cbd5e1;border-radius:8px;padding:4px 8px;cursor:pointer;font-size:0.72rem">Fermer</button>'
+      +'</div>'
+      +'<div style="margin-top:8px;font-size:0.74rem;color:#94a3b8">Aucun ID trouvé pour les filtres courants.</div>'
+      +'</div>';
+    return;
+  }
+  box.innerHTML='<div style="margin-top:8px;background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:10px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'
+    +'<strong style="font-size:0.78rem;color:#cbd5e1">'+title+' ('+ids.length+')</strong>'
+    +'<button type="button" onclick="closeStatsFoundDetails()" style="background:#1e293b;border:1px solid #334155;color:#cbd5e1;border-radius:8px;padding:4px 8px;cursor:pointer;font-size:0.72rem">Fermer</button>'
+    +'</div>'
+    +'<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">'
+    +ids.map(function(id){
+      return '<span style="font-family:var(--mono);font-size:0.72rem;padding:4px 7px;border-radius:8px;border:1px solid #334155;background:#111827;color:#e2e8f0">'+escHtml(id)+'</span>';
+    }).join('')
+    +'</div>'
+    +'</div>';
+}
+function closeStatsFoundDetails(){
+  var box=document.getElementById('statsFoundDetailsBox');
+  if(box)box.innerHTML='';
 }
 function _landingCodeFamily(foundRaw){
   var found=String(foundRaw||'').trim().toUpperCase();
@@ -1643,7 +1677,17 @@ async function loadStats(){
     if(x.type!=='fixed')return false;
     return !!(String(x.found_by||'').trim()||x.found_at);
   }).length;
-  var foundFixed=Math.max(foundFixedFromEvents,foundFixedFromState);
+  var foundFixedIdsFromState={};
+  filteredTreasures.forEach(function(x){
+    if(x.type!=='fixed')return;
+    if(!(String(x.found_by||'').trim()||x.found_at))return;
+    var id=String(x.id||'').trim();
+    if(id)foundFixedIdsFromState[id.toUpperCase()]=id;
+  });
+  var foundFixedSet={};
+  Object.keys(foundFixedIdsFromEvents).forEach(function(k){foundFixedSet[String(k||'').toUpperCase()]=k;});
+  Object.keys(foundFixedIdsFromState).forEach(function(k){foundFixedSet[k]=foundFixedIdsFromState[k];});
+  var foundFixed=Math.max(foundFixedFromEvents,foundFixedFromState,Object.keys(foundFixedSet).length);
   var foundUnique=Object.keys(foundUniqueIds).length;
 
   var playersCount;
@@ -1715,7 +1759,24 @@ async function loadStats(){
     foundUniqueIdsFromScans[tid.toUpperCase()]=1;
   });
   var foundUniqueFromScans=Object.keys(foundUniqueIdsFromScans).length;
-  foundUnique=Math.max(foundUnique,foundUniqueFromState,foundUniqueFromScans);
+  var foundUniqueSet={};
+  Object.keys(foundUniqueIds).forEach(function(k){foundUniqueSet[String(k||'').toUpperCase()]=k;});
+  filteredTreasures.forEach(function(x){
+    if(x.type!=='unique')return;
+    if(!(String(x.found_by||'').trim()||x.found_at))return;
+    var id=String(x.id||'').trim();
+    if(id)foundUniqueSet[id.toUpperCase()]=id;
+  });
+  Object.keys(foundUniqueIdsFromScans).forEach(function(k){
+    var kk=String(k||'').toUpperCase();
+    if(!kk)return;
+    if(!foundUniqueSet[kk])foundUniqueSet[kk]=k;
+  });
+  foundUnique=Math.max(foundUnique,foundUniqueFromState,foundUniqueFromScans,Object.keys(foundUniqueSet).length);
+  _statsFoundDetails={
+    fixed:Object.keys(foundFixedSet).map(function(k){return foundFixedSet[k]||k;}).filter(Boolean),
+    unique:Object.keys(foundUniqueSet).map(function(k){return foundUniqueSet[k]||k;}).filter(Boolean)
+  };
 
   var landing=await loadLandingSummary();
   var filteredLandingEntries=[];
@@ -1787,8 +1848,8 @@ async function loadStats(){
     +'<table style="width:100%;border-collapse:collapse;background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden">'
     +'<thead><tr style="background:#111827"><th style="text-align:left;padding:8px 10px;font-size:0.72rem;color:#94a3b8">Indicateur</th><th style="text-align:right;padding:8px 10px;font-size:0.72rem;color:#94a3b8">Valeur</th></tr></thead>'
     +'<tbody>'
-    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Trésors fixes trouvés</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+foundFixed+' / '+totalFixed+'</td></tr>'
-    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Trésors uniques trouvés</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+foundUnique+' / '+totalUnique+'</td></tr>'
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Trésors fixes trouvés</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right"><button type="button" onclick="openStatsFoundDetails(\'fixed\')" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;text-decoration:underline;font:inherit">'+foundFixed+' / '+totalFixed+'</button></td></tr>'
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Trésors uniques trouvés</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right"><button type="button" onclick="openStatsFoundDetails(\'unique\')" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;text-decoration:underline;font:inherit">'+foundUnique+' / '+totalUnique+'</button></td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Uniques vus en scans bruts</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+foundUniqueFromScans+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">'+playersLabel+'</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+playersCount+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Nouveaux joueurs (inscription)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+newPlayersCount+'</td></tr>'
@@ -1845,6 +1906,7 @@ async function loadStats(){
 
   document.getElementById('statsDiv').innerHTML=''
     +summaryTable
+    +'<div id="statsFoundDetailsBox"></div>'
     +entriesTable
     +'<button class="btn" style="background:#1e293b;border:1px solid #334155;margin-top:12px;font-size:0.82rem;padding:10px" onclick="exportCSV()">⬇ Exporter events.csv (inclut duree_sec)</button>';
   renderLandingEntriesTable();
