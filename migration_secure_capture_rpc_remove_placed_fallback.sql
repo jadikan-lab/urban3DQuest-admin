@@ -2,32 +2,6 @@
 -- Removes placed_at fallback to enforce activated_at as the sole anchor.
 -- Apply in PROD then STG.
 
-create table if not exists public.scan_attempts (
-  id            bigserial primary key,
-  created_at    timestamptz default now(),
-  pseudo        text,
-  treasure_id   text references public.treasures(id) on delete set null,
-  treasure_type text,
-  status        text not null default 'too_far',
-  distance_m    integer,
-  proximity_m   integer,
-  player_lat    double precision,
-  player_lng    double precision
-);
-
-alter table public.scan_attempts enable row level security;
-
-drop policy if exists scan_attempts_read_all on public.scan_attempts;
-drop policy if exists scan_attempts_admin_all on public.scan_attempts;
-
-create policy scan_attempts_read_all on public.scan_attempts
-  for select to authenticated
-  using (public.is_admin());
-
-create policy scan_attempts_admin_all on public.scan_attempts
-  for all to authenticated
-  using (public.is_admin()) with check (public.is_admin());
-
 create or replace function public.process_find_secure(
   p_pseudo text,
   p_session_token text,
@@ -54,8 +28,24 @@ declare
   v_distance_m numeric;
   v_session_ok boolean := true;
   v_event_id bigint;
+  v_prev_found_by text;
+  v_prev_found_at timestamptz;
+  v_proximity_m integer;
 begin
+  v_proximity_m := greatest(10, coalesce(p_proximity_m, 100));
+
   if p_pseudo is null or btrim(p_pseudo) = '' then
+    begin
+      if to_regclass('public.scan_attempts') is not null then
+        insert into public.scan_attempts (
+          pseudo, treasure_id, status, proximity_m, player_lat, player_lng
+        ) values (
+          nullif(btrim(p_pseudo), ''), p_treasure_id, 'invalid_pseudo', v_proximity_m, p_player_lat, p_player_lng
+        );
+      end if;
+    exception when others then
+      null;
+    end;
     return jsonb_build_object('status', 'invalid_pseudo');
   end if;
 
@@ -68,6 +58,17 @@ begin
       v_session_ok := false;
     end;
     if not v_session_ok then
+      begin
+        if to_regclass('public.scan_attempts') is not null then
+          insert into public.scan_attempts (
+            pseudo, treasure_id, status, proximity_m, player_lat, player_lng
+          ) values (
+            p_pseudo, p_treasure_id, 'invalid_session', v_proximity_m, p_player_lat, p_player_lng
+          );
+        end if;
+      exception when others then
+        null;
+      end;
       return jsonb_build_object('status', 'invalid_session');
     end if;
   end if;
@@ -79,14 +80,47 @@ begin
    for update;
 
   if not found then
+    begin
+      if to_regclass('public.scan_attempts') is not null then
+        insert into public.scan_attempts (
+          pseudo, treasure_id, status, proximity_m, player_lat, player_lng
+        ) values (
+          p_pseudo, p_treasure_id, 'not_found', v_proximity_m, p_player_lat, p_player_lng
+        );
+      end if;
+    exception when others then
+      null;
+    end;
     return jsonb_build_object('status', 'not_found');
   end if;
 
   if not coalesce(v_t.visible, false) then
+    begin
+      if to_regclass('public.scan_attempts') is not null then
+        insert into public.scan_attempts (
+          pseudo, treasure_id, treasure_type, status, proximity_m, player_lat, player_lng
+        ) values (
+          p_pseudo, v_t.id, v_t.type, 'hidden', v_proximity_m, p_player_lat, p_player_lng
+        );
+      end if;
+    exception when others then
+      null;
+    end;
     return jsonb_build_object('status', 'hidden');
   end if;
 
   if p_player_lat is null or p_player_lng is null then
+    begin
+      if to_regclass('public.scan_attempts') is not null then
+        insert into public.scan_attempts (
+          pseudo, treasure_id, treasure_type, status, proximity_m, player_lat, player_lng
+        ) values (
+          p_pseudo, v_t.id, v_t.type, 'no_gps', v_proximity_m, p_player_lat, p_player_lng
+        );
+      end if;
+    exception when others then
+      null;
+    end;
     return jsonb_build_object('status', 'no_gps');
   end if;
 
@@ -98,13 +132,15 @@ begin
     )
   );
 
-  if v_distance_m > greatest(10, coalesce(p_proximity_m, 100)) then
+  if v_distance_m > v_proximity_m then
     begin
-      insert into public.scan_attempts (
-        pseudo, treasure_id, treasure_type, status, distance_m, proximity_m, player_lat, player_lng
-      ) values (
-        p_pseudo, v_t.id, v_t.type, 'too_far', round(v_distance_m)::integer, greatest(10, coalesce(p_proximity_m, 100)), p_player_lat, p_player_lng
-      );
+      if to_regclass('public.scan_attempts') is not null then
+        insert into public.scan_attempts (
+          pseudo, treasure_id, treasure_type, status, distance_m, proximity_m, player_lat, player_lng
+        ) values (
+          p_pseudo, v_t.id, v_t.type, 'too_far', round(v_distance_m)::integer, v_proximity_m, p_player_lat, p_player_lng
+        );
+      end if;
     exception when others then
       null;
     end;
@@ -120,10 +156,32 @@ begin
   end if;
 
   if v_already_found then
+    begin
+      if to_regclass('public.scan_attempts') is not null then
+        insert into public.scan_attempts (
+          pseudo, treasure_id, treasure_type, status, distance_m, proximity_m, player_lat, player_lng
+        ) values (
+          p_pseudo, v_t.id, v_t.type, 'already', round(v_distance_m)::integer, v_proximity_m, p_player_lat, p_player_lng
+        );
+      end if;
+    exception when others then
+      null;
+    end;
     return jsonb_build_object('status', 'already');
   end if;
 
   if v_t.type = 'unique' and coalesce(v_t.found_by, '') <> '' then
+    begin
+      if to_regclass('public.scan_attempts') is not null then
+        insert into public.scan_attempts (
+          pseudo, treasure_id, treasure_type, status, distance_m, proximity_m, player_lat, player_lng
+        ) values (
+          p_pseudo, v_t.id, v_t.type, 'taken', round(v_distance_m)::integer, v_proximity_m, p_player_lat, p_player_lng
+        );
+      end if;
+    exception when others then
+      null;
+    end;
     return jsonb_build_object('status', 'taken', 'found_by', v_t.found_by);
   end if;
 
@@ -150,19 +208,71 @@ begin
     v_new_found_by := case when coalesce(v_t.found_by, '') = '' then p_pseudo else v_t.found_by || ',' || p_pseudo end;
   end if;
 
-  update public.treasures
-     set found_by = v_new_found_by,
-         found_at = v_now
-   where id = v_t.id;
+  v_prev_found_by := coalesce(v_t.found_by, '');
+  v_prev_found_at := v_t.found_at;
 
-  insert into public.events (pseudo, treasure_id, treasure_type, duration_sec, created_at)
-  values (p_pseudo, v_t.id, v_t.type, v_duration_sec, v_now)
-  on conflict (pseudo, treasure_id) do nothing
-  returning id into v_event_id;
+  begin
+    -- Ensure player row exists so event trigger validation cannot fail for known sessions.
+    insert into public.players (pseudo)
+    values (p_pseudo)
+    on conflict (pseudo) do nothing;
+
+    update public.treasures
+       set found_by = v_new_found_by,
+           found_at = v_now
+     where id = v_t.id;
+
+    insert into public.events (pseudo, treasure_id, treasure_type, duration_sec, created_at)
+    values (p_pseudo, v_t.id, v_t.type, v_duration_sec, v_now)
+    on conflict (pseudo, treasure_id) do nothing
+    returning id into v_event_id;
+  exception when others then
+    update public.treasures
+       set found_by = v_prev_found_by,
+           found_at = v_prev_found_at
+     where id = v_t.id;
+
+    begin
+      if to_regclass('public.scan_attempts') is not null then
+        insert into public.scan_attempts (
+          pseudo, treasure_id, treasure_type, status, distance_m, proximity_m, player_lat, player_lng
+        ) values (
+          p_pseudo, v_t.id, v_t.type, 'event_error', round(v_distance_m)::integer, v_proximity_m, p_player_lat, p_player_lng
+        );
+      end if;
+    exception when others then
+      null;
+    end;
+
+    return jsonb_build_object('status', 'event_error');
+  end;
 
   if v_event_id is null then
+    begin
+      if to_regclass('public.scan_attempts') is not null then
+        insert into public.scan_attempts (
+          pseudo, treasure_id, treasure_type, status, distance_m, proximity_m, player_lat, player_lng
+        ) values (
+          p_pseudo, v_t.id, v_t.type, 'already', round(v_distance_m)::integer, v_proximity_m, p_player_lat, p_player_lng
+        );
+      end if;
+    exception when others then
+      null;
+    end;
     return jsonb_build_object('status', 'already');
   end if;
+
+  begin
+    if to_regclass('public.scan_attempts') is not null then
+      insert into public.scan_attempts (
+        pseudo, treasure_id, treasure_type, status, distance_m, proximity_m, player_lat, player_lng
+      ) values (
+        p_pseudo, v_t.id, v_t.type, 'success', round(v_distance_m)::integer, v_proximity_m, p_player_lat, p_player_lng
+      );
+    end if;
+  exception when others then
+    null;
+  end;
 
   return jsonb_build_object(
     'status', 'success',

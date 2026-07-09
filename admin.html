@@ -648,7 +648,7 @@ function buildFoundQrUrl(id,meta){
   return (isSoloId||isSoloMeta||isSoloBatch)?buildSoloLandingUrl(id):buildGameUrl('found',id);
 }
 var ADMIN_UI_VERSION='v4.1';
-var ADMIN_BUILD_VERSION='6a63f94';
+var ADMIN_BUILD_VERSION='20260709';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,prelaunchEnabled=false,egressEmergency=false,realtimeEnabled=false,photoDataUrls=[],adminMap=null,mapLayers=[],adminMapFixed=null,mapLayersFixed=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
 var _adminTitle=document.getElementById('adminTitle');
@@ -1468,10 +1468,6 @@ async function loadStats(){
   var foundUnique=t.filter(function(x){return x.type==='unique'&&x.found_by&&x.found_by.length>0;}).length;
   var topPlayer=p.length?p.slice().sort(function(a,b){return b.found_count-a.found_count||(a.score-b.score);})[0]:null;
   var landing=await loadLandingSummary();
-  var conversion='—';
-  if(landing.available&&landing.total>0){
-    conversion=(Math.round((p.length/landing.total)*1000)/10)+'%';
-  }
   var lastLanding='—';
   if(landing.available&&landing.lastAt){
     try{
@@ -1493,7 +1489,6 @@ async function loadStats(){
     +(landing.available
       ?'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Arrivées landing</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+landing.total+'</td></tr>'
       +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Arrivées avec QR</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+landing.withFound+'</td></tr>'
-      +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Conversion landing → inscription</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+conversion+'</td></tr>'
       +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Dernier hit landing</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.75rem">'+escHtml(lastLanding)+'</td></tr>'
       :'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Landing</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;color:#fbbf24">indisponible</td></tr>'
       +'<tr><td colspan="2" style="padding:8px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">Uploader la dernière version de <code>landing-hit.php</code> pour activer le résumé JSON.</td></tr>')
