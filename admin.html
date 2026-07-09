@@ -1425,7 +1425,75 @@ async function saveConfig(){
   showStatus(document.getElementById('stCfgBottom'),'ok','✅ Config sauvegardée');
 }
 async function resetGame(){if(!confirm('ATTENTION : Remettre la partie à zéro ?\n\n• Tous les trésors seront démarqués (found_by remis à vide)\n• Tous les joueurs et événements seront supprimés\n\nCette action est irréversible.'))return;if(!confirm('Confirmation finale : vraiment réinitialiser ?'))return;var st=document.getElementById('stCfg');st.className='status';st.textContent='Réinitialisation...';st.style.display='block';try{await db.from('treasures').update({found_by:'',found_at:null}).neq('id','__none__');await db.from('events').delete().neq('id',0);await db.from('players').delete().neq('pseudo','__none__');showStatus(st,'ok','Partie réinitialisée ✓ — trésors remis à zéro, joueurs et events supprimés');}catch(e){showStatus(st,'err','Erreur : '+e.message);}}
-async function loadStats(){var r1=await db.from('treasures').select('id,type,found_by');var r2=await db.from('players').select('pseudo,found_count,score');var r3=await db.from('events').select('duration_sec').eq('treasure_type','unique');var t=r1.data||[];var p=r2.data||[];var flashEvents=(r3.data||[]).filter(function(e){return e.duration_sec!==null&&e.duration_sec!==undefined;});var avgFlashSec=flashEvents.length?Math.round(flashEvents.reduce(function(sum,e){return sum+(Number(e.duration_sec)||0);},0)/flashEvents.length):null;var bestFlashSec=flashEvents.length?flashEvents.reduce(function(min,e){var v=Number(e.duration_sec)||0;return v<min?v:min;},Number.MAX_SAFE_INTEGER):null;var fmtFlash=function(sec){if(sec===null||sec===undefined||!isFinite(sec))return '—';var s=Math.max(0,Math.round(sec));var h=Math.floor(s/3600);var m=Math.floor((s%3600)/60);var ss=s%60;if(h>0)return h+'h '+String(m).padStart(2,'0')+'m '+String(ss).padStart(2,'0')+'s';if(m>0)return m+'m '+String(ss).padStart(2,'0')+'s';return ss+'s';};var totalFixed=t.filter(function(x){return x.type==='fixed';}).length;var totalUnique=t.filter(function(x){return x.type==='unique';}).length;var foundFixed=t.filter(function(x){return x.type==='fixed'&&x.found_by&&x.found_by.length>0;}).length;var foundUnique=t.filter(function(x){return x.type==='unique'&&x.found_by&&x.found_by.length>0;}).length;var topPlayer=p.length?p.slice().sort(function(a,b){return b.found_count-a.found_count||(a.score-b.score);})[0]:null;document.getElementById('statsDiv').innerHTML='<div class="stat-row"><span>Trésors fixes</span><span>'+foundFixed+' / '+totalFixed+' trouvés</span></div><div class="stat-row"><span>Trésors uniques</span><span>'+foundUnique+' / '+totalUnique+' trouvés</span></div><div class="stat-row"><span>Joueurs inscrits</span><span>'+p.length+'</span></div><div class="stat-row"><span>⏱ Temps flash moyen</span><span>'+fmtFlash(avgFlashSec)+'</span></div><div class="stat-row"><span>⚡ Meilleur temps flash</span><span>'+fmtFlash(bestFlashSec)+'</span></div>'+(topPlayer?'<div class="stat-row"><span>🥇 Meilleur joueur</span><span>'+topPlayer.pseudo+' ('+topPlayer.found_count+' trouvés)</span></div>':'')+'<button class="btn" style="background:#1e293b;border:1px solid #334155;margin-top:12px;font-size:0.82rem;padding:10px" onclick="exportCSV()">⬇ Exporter events.csv (inclut duree_sec)</button>';}
+async function loadLandingSummary(){
+  var endpoint='https://www.jadikan-lp.com/LandingGameArles/landing-hit.php?summary=1';
+  try{
+    var r=await fetch(endpoint,{cache:'no-store'});
+    if(r.ok){
+      var j=await r.json();
+      if(j&&j.ok){
+        return {
+          available:true,
+          total:Number(j.total||0),
+          withFound:Number(j.with_found||0),
+          withoutFound:Number(j.without_found||0),
+          lastAt:String(j.last_at||''),
+          lastFound:String(j.last_found||'')
+        };
+      }
+    }
+  }catch(_e){}
+  return {available:false,total:0,withFound:0,withoutFound:0,lastAt:'',lastFound:''};
+}
+async function loadStats(){
+  var r1=await db.from('treasures').select('id,type,found_by');
+  var r2=await db.from('players').select('pseudo,found_count,score');
+  var r3=await db.from('events').select('duration_sec').eq('treasure_type','unique');
+  var t=r1.data||[];
+  var p=r2.data||[];
+  var flashEvents=(r3.data||[]).filter(function(e){return e.duration_sec!==null&&e.duration_sec!==undefined;});
+  var avgFlashSec=flashEvents.length?Math.round(flashEvents.reduce(function(sum,e){return sum+(Number(e.duration_sec)||0);},0)/flashEvents.length):null;
+  var bestFlashSec=flashEvents.length?flashEvents.reduce(function(min,e){var v=Number(e.duration_sec)||0;return v<min?v:min;},Number.MAX_SAFE_INTEGER):null;
+  var fmtFlash=function(sec){if(sec===null||sec===undefined||!isFinite(sec))return '—';var s=Math.max(0,Math.round(sec));var h=Math.floor(s/3600);var m=Math.floor((s%3600)/60);var ss=s%60;if(h>0)return h+'h '+String(m).padStart(2,'0')+'m '+String(ss).padStart(2,'0')+'s';if(m>0)return m+'m '+String(ss).padStart(2,'0')+'s';return ss+'s';};
+  var totalFixed=t.filter(function(x){return x.type==='fixed';}).length;
+  var totalUnique=t.filter(function(x){return x.type==='unique';}).length;
+  var foundFixed=t.filter(function(x){return x.type==='fixed'&&x.found_by&&x.found_by.length>0;}).length;
+  var foundUnique=t.filter(function(x){return x.type==='unique'&&x.found_by&&x.found_by.length>0;}).length;
+  var topPlayer=p.length?p.slice().sort(function(a,b){return b.found_count-a.found_count||(a.score-b.score);})[0]:null;
+  var landing=await loadLandingSummary();
+  var conversion='—';
+  if(landing.available&&landing.total>0){
+    conversion=(Math.round((p.length/landing.total)*1000)/10)+'%';
+  }
+  var lastLanding='—';
+  if(landing.available&&landing.lastAt){
+    try{
+      var d=new Date(landing.lastAt);
+      var foundTxt=landing.lastFound?(' · '+landing.lastFound):'';
+      lastLanding=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})+foundTxt;
+    }catch(_e){
+      lastLanding=landing.lastAt+(landing.lastFound?(' · '+landing.lastFound):'');
+    }
+  }
+  var landingRows='';
+  if(landing.available){
+    landingRows='<div class="stat-row"><span>Landing · arrivées</span><span>'+landing.total+'</span></div>'
+      +'<div class="stat-row"><span>Landing · avec QR</span><span>'+landing.withFound+'</span></div>'
+      +'<div class="stat-row"><span>Landing · dernier hit</span><span style="font-size:0.75rem">'+escHtml(lastLanding)+'</span></div>'
+      +'<div class="stat-row"><span>Conversion inscriptions</span><span>'+conversion+'</span></div>';
+  }else{
+    landingRows='<div class="stat-row"><span>Landing</span><span style="color:#fbbf24">indisponible</span></div>';
+  }
+  document.getElementById('statsDiv').innerHTML=''
+    +'<div class="stat-row"><span>Trésors fixes</span><span>'+foundFixed+' / '+totalFixed+' trouvés</span></div>'
+    +'<div class="stat-row"><span>Trésors uniques</span><span>'+foundUnique+' / '+totalUnique+' trouvés</span></div>'
+    +'<div class="stat-row"><span>Joueurs inscrits</span><span>'+p.length+'</span></div>'
+    +landingRows
+    +'<div class="stat-row"><span>⏱ Temps flash moyen</span><span>'+fmtFlash(avgFlashSec)+'</span></div>'
+    +'<div class="stat-row"><span>⚡ Meilleur temps flash</span><span>'+fmtFlash(bestFlashSec)+'</span></div>'
+    +(topPlayer?'<div class="stat-row"><span>🥇 Meilleur joueur</span><span>'+topPlayer.pseudo+' ('+topPlayer.found_count+' trouvés)</span></div>':'')
+    +'<button class="btn" style="background:#1e293b;border:1px solid #334155;margin-top:12px;font-size:0.82rem;padding:10px" onclick="exportCSV()">⬇ Exporter events.csv (inclut duree_sec)</button>';
+}
 
 async function loadScanAttemptsJournal(){
   var el=document.getElementById('scanAttemptsDiv');
