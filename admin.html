@@ -653,7 +653,7 @@ function buildFoundQrUrl(id,meta){
   return (isSoloId||isSoloMeta||isSoloBatch)?buildSoloLandingUrl(id):buildGameUrl('found',id);
 }
 var ADMIN_UI_VERSION='v4.1';
-var ADMIN_BUILD_VERSION='20260709-pilotage-quest-period';
+var ADMIN_BUILD_VERSION='20260709-pilotage-raw-scans';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,prelaunchEnabled=false,egressEmergency=false,realtimeEnabled=false,photoDataUrls=[],adminMap=null,mapLayers=[],adminMapFixed=null,mapLayersFixed=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
 var _adminTitle=document.getElementById('adminTitle');
@@ -1583,9 +1583,11 @@ async function loadStats(){
   var r1=await db.from('treasures').select('id,type,found_by,quest');
   var r2=await db.from('players').select('pseudo,found_count,score,joined_at');
   var r3=await db.from('events').select('pseudo,treasure_id,treasure_type,duration_sec,created_at');
+  var r4=await db.from('scan_attempts').select('created_at,treasure_id,status');
   var t=r1.data||[];
   var p=r2.data||[];
   var events=r3.data||[];
+  var scans=r4.data||[];
 
   var questValues=[];
   var qSeen={};
@@ -1661,6 +1663,21 @@ async function loadStats(){
     topPlayer=list[0]||null;
   }
 
+  var filteredScans=scans.filter(function(s){
+    if(!_inStatsWindow(s.created_at,window))return false;
+    if(_statsFilterQuest){
+      var tid=String(s.treasure_id||'').trim();
+      if(!tid)return false;
+      var tt=treasureById[tid];
+      if(!tt)return false;
+      return String(tt.quest||'').trim()===_statsFilterQuest;
+    }
+    return true;
+  });
+  var rawScansTotal=filteredScans.length;
+  var rawScansWithCode=filteredScans.filter(function(s){return String(s.treasure_id||'').trim().length>0;}).length;
+  var rawScansSuccess=filteredScans.filter(function(s){return String(s.status||'').toLowerCase()==='success';}).length;
+
   var landing=await loadLandingSummary();
   var filteredLandingEntries=[];
   if(landing.available){
@@ -1735,6 +1752,9 @@ async function loadStats(){
       +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Dernier hit landing</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.75rem">'+escHtml(lastLanding)+'</td></tr>'
       :'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Landing</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;color:#fbbf24">indisponible</td></tr>'
       +'<tr><td colspan="2" style="padding:8px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">Uploader la dernière version de <code>landing-hit.php</code> pour activer le résumé JSON.</td></tr>')
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Scans bruts (total)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+rawScansTotal+'</td></tr>'
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Scans bruts avec code</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+rawScansWithCode+'</td></tr>'
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Scans bruts validés (success)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+rawScansSuccess+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Temps flash moyen</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+fmtFlash(avgFlashSec)+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Meilleur temps flash</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+fmtFlash(bestFlashSec)+'</td></tr>'
     +(topPlayer?'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Meilleur joueur</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+topPlayer.pseudo+' ('+topPlayer.count+')</td></tr>':'')
