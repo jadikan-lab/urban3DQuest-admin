@@ -653,7 +653,7 @@ function buildFoundQrUrl(id,meta){
   return (isSoloId||isSoloMeta||isSoloBatch)?buildSoloLandingUrl(id):buildGameUrl('found',id);
 }
 var ADMIN_UI_VERSION='v4.1';
-var ADMIN_BUILD_VERSION='20260709-pilotage-fresh-players-fixed';
+var ADMIN_BUILD_VERSION='20260709-pilotage-new-players-fix';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,prelaunchEnabled=false,egressEmergency=false,realtimeEnabled=false,photoDataUrls=[],adminMap=null,mapLayers=[],adminMapFixed=null,mapLayersFixed=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
 var _adminTitle=document.getElementById('adminTitle');
@@ -1657,11 +1657,6 @@ async function loadStats(){
   }
   var newPlayersCount=p.filter(function(pl){
     if(!_inStatsWindow(pl.joined_at,window))return false;
-    if(_statsFilterQuest){
-      var pseudo=String(pl.pseudo||'').trim();
-      if(!pseudo)return false;
-      return filteredEvents.some(function(e){return String(e.pseudo||'').trim()===pseudo;});
-    }
     return true;
   }).length;
 
