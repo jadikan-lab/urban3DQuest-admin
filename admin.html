@@ -653,7 +653,7 @@ function buildFoundQrUrl(id,meta){
   return (isSoloId||isSoloMeta||isSoloBatch)?buildSoloLandingUrl(id):buildGameUrl('found',id);
 }
 var ADMIN_UI_VERSION='v4.1';
-var ADMIN_BUILD_VERSION='20260709-pilotage-landing-lux-fix';
+var ADMIN_BUILD_VERSION='20260709-pilotage-solo-unique-scans';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,prelaunchEnabled=false,egressEmergency=false,realtimeEnabled=false,photoDataUrls=[],adminMap=null,mapLayers=[],adminMapFixed=null,mapLayersFixed=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
 var _adminTitle=document.getElementById('adminTitle');
@@ -1685,15 +1685,37 @@ async function loadStats(){
     if(_statsFilterQuest){
       var tid=String(s.treasure_id||'').trim();
       if(!tid)return false;
-      var tt=treasureById[tid];
+      var tt=treasureById[tid]||treasureByIdUpper[tid.toUpperCase()];
       if(!tt)return false;
-      return String(tt.quest||'').trim()===_statsFilterQuest;
+      var ttQuest=String(tt.quest||'').trim();
+      if(ttQuest===_statsFilterQuest)return true;
+      var isSoloQuestFilter=/solo/i.test(String(_statsFilterQuest||''));
+      if(isSoloQuestFilter&&tt.type==='unique'&&String(tt.id||'').toUpperCase().indexOf('LUX-')===0&&!ttQuest)return true;
+      return false;
     }
     return true;
   });
   var rawScansTotal=filteredScans.length;
   var rawScansWithCode=filteredScans.filter(function(s){return String(s.treasure_id||'').trim().length>0;}).length;
   var rawScansSuccess=filteredScans.filter(function(s){return String(s.status||'').toLowerCase()==='success';}).length;
+
+  var foundUniqueFromState=filteredTreasures.filter(function(x){
+    if(x.type!=='unique')return false;
+    return !!(String(x.found_by||'').trim()||x.found_at);
+  }).length;
+  var uniqueScanStatuses={qr_open:1,qr_open_checkin:1,success:1};
+  var foundUniqueIdsFromScans={};
+  filteredScans.forEach(function(s){
+    var tid=String(s.treasure_id||'').trim();
+    if(!tid)return;
+    var tt=treasureById[tid]||treasureByIdUpper[tid.toUpperCase()];
+    if(!tt||tt.type!=='unique')return;
+    var st=String(s.status||'').toLowerCase();
+    if(!uniqueScanStatuses[st])return;
+    foundUniqueIdsFromScans[tid.toUpperCase()]=1;
+  });
+  var foundUniqueFromScans=Object.keys(foundUniqueIdsFromScans).length;
+  foundUnique=Math.max(foundUnique,foundUniqueFromState,foundUniqueFromScans);
 
   var landing=await loadLandingSummary();
   var filteredLandingEntries=[];
@@ -1767,6 +1789,7 @@ async function loadStats(){
     +'<tbody>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Trésors fixes trouvés</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+foundFixed+' / '+totalFixed+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Trésors uniques trouvés</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+foundUnique+' / '+totalUnique+'</td></tr>'
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Uniques vus en scans bruts</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+foundUniqueFromScans+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">'+playersLabel+'</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+playersCount+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Nouveaux joueurs (inscription)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+newPlayersCount+'</td></tr>'
     +(landing.available
