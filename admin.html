@@ -653,7 +653,7 @@ function buildFoundQrUrl(id,meta){
   return (isSoloId||isSoloMeta||isSoloBatch)?buildSoloLandingUrl(id):buildGameUrl('found',id);
 }
 var ADMIN_UI_VERSION='v4.1';
-var ADMIN_BUILD_VERSION='20260709-pilotage-landing-unique-coherence';
+var ADMIN_BUILD_VERSION='20260709-pilotage-clear-scan-report';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,prelaunchEnabled=false,egressEmergency=false,realtimeEnabled=false,photoDataUrls=[],adminMap=null,mapLayers=[],adminMapFixed=null,mapLayersFixed=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
 var _adminTitle=document.getElementById('adminTitle');
@@ -1471,7 +1471,7 @@ var _statsFilterQuest='';
 var _statsFilterPeriod='all';
 var _statsFilterFrom='';
 var _statsFilterTo='';
-var _statsFoundDetails={fixed:[],unique:[]};
+var _statsFoundDetails={fixed:[],unique_validated:[],unique_observed:[],unique_gap:[]};
 function _statsWindow(){
   var now=new Date();
   if(_statsFilterPeriod==='today'){
@@ -1512,7 +1512,13 @@ function openStatsFoundDetails(kind){
   var ids=((_statsFoundDetails&&_statsFoundDetails[kind])||[]).slice().sort(function(a,b){
     return String(a||'').localeCompare(String(b||''),'fr',{sensitivity:'base'});
   });
-  var title=kind==='fixed'?'Balises fixes trouvées':'Trésors uniques trouvés';
+  var titleMap={
+    fixed:'Balises fixes trouvées',
+    unique_validated:'Trésors uniques validés (events)',
+    unique_observed:'Trésors uniques observés (scan/landing/état)',
+    unique_gap:'Trésors observés non validés'
+  };
+  var title=titleMap[kind]||'Détail';
   if(!ids.length){
     box.innerHTML='<div style="margin-top:8px;background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:10px">'
       +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'
@@ -1688,7 +1694,8 @@ async function loadStats(){
   Object.keys(foundFixedIdsFromEvents).forEach(function(k){foundFixedSet[String(k||'').toUpperCase()]=k;});
   Object.keys(foundFixedIdsFromState).forEach(function(k){foundFixedSet[k]=foundFixedIdsFromState[k];});
   var foundFixed=Math.max(foundFixedFromEvents,foundFixedFromState,Object.keys(foundFixedSet).length);
-  var foundUnique=Object.keys(foundUniqueIds).length;
+  var foundUniqueValidatedSet={};
+  Object.keys(foundUniqueIds).forEach(function(k){foundUniqueValidatedSet[String(k||'').toUpperCase()]=k;});
 
   var playersCount;
   var playersLabel;
@@ -1743,10 +1750,14 @@ async function loadStats(){
   var rawScansWithCode=filteredScans.filter(function(s){return String(s.treasure_id||'').trim().length>0;}).length;
   var rawScansSuccess=filteredScans.filter(function(s){return String(s.status||'').toLowerCase()==='success';}).length;
 
-  var foundUniqueFromState=filteredTreasures.filter(function(x){
-    if(x.type!=='unique')return false;
-    return !!(String(x.found_by||'').trim()||x.found_at);
-  }).length;
+  var foundUniqueIdsFromState={};
+  filteredTreasures.forEach(function(x){
+    if(x.type!=='unique')return;
+    if(!(String(x.found_by||'').trim()||x.found_at))return;
+    var id=String(x.id||'').trim();
+    if(id)foundUniqueIdsFromState[id.toUpperCase()]=id;
+  });
+  var foundUniqueFromState=Object.keys(foundUniqueIdsFromState).length;
   var uniqueScanStatuses={qr_open:1,qr_open_checkin:1,success:1};
   var foundUniqueIdsFromScans={};
   filteredScans.forEach(function(s){
@@ -1759,20 +1770,6 @@ async function loadStats(){
     foundUniqueIdsFromScans[tid.toUpperCase()]=1;
   });
   var foundUniqueFromScans=Object.keys(foundUniqueIdsFromScans).length;
-  var foundUniqueSet={};
-  Object.keys(foundUniqueIds).forEach(function(k){foundUniqueSet[String(k||'').toUpperCase()]=k;});
-  filteredTreasures.forEach(function(x){
-    if(x.type!=='unique')return;
-    if(!(String(x.found_by||'').trim()||x.found_at))return;
-    var id=String(x.id||'').trim();
-    if(id)foundUniqueSet[id.toUpperCase()]=id;
-  });
-  Object.keys(foundUniqueIdsFromScans).forEach(function(k){
-    var kk=String(k||'').toUpperCase();
-    if(!kk)return;
-    if(!foundUniqueSet[kk])foundUniqueSet[kk]=k;
-  });
-  foundUnique=Math.max(foundUnique,foundUniqueFromState,foundUniqueFromScans,Object.keys(foundUniqueSet).length);
 
   var landing=await loadLandingSummary();
   var filteredLandingEntries=[];
@@ -1805,13 +1802,26 @@ async function loadStats(){
     }
   });
   var foundUniqueFromLanding=Object.keys(foundUniqueIdsFromLanding).length;
-  Object.keys(foundUniqueIdsFromLanding).forEach(function(k){
-    if(!foundUniqueSet[k])foundUniqueSet[k]=foundUniqueIdsFromLanding[k];
+  var foundUniqueObservedSet={};
+  Object.keys(foundUniqueIdsFromState).forEach(function(k){foundUniqueObservedSet[k]=foundUniqueIdsFromState[k];});
+  Object.keys(foundUniqueIdsFromScans).forEach(function(k){
+    var kk=String(k||'').toUpperCase();
+    if(!kk)return;
+    if(!foundUniqueObservedSet[kk])foundUniqueObservedSet[kk]=k;
   });
-  foundUnique=Math.max(foundUnique,foundUniqueFromLanding,Object.keys(foundUniqueSet).length);
+  Object.keys(foundUniqueIdsFromLanding).forEach(function(k){
+    if(!foundUniqueObservedSet[k])foundUniqueObservedSet[k]=foundUniqueIdsFromLanding[k];
+  });
+  var foundUniqueValidated=Object.keys(foundUniqueValidatedSet).length;
+  var foundUniqueObserved=Object.keys(foundUniqueObservedSet).length;
+  var uniqueGapSet={};
+  Object.keys(foundUniqueObservedSet).forEach(function(k){if(!foundUniqueValidatedSet[k])uniqueGapSet[k]=foundUniqueObservedSet[k];});
+  var uniqueGapCount=Object.keys(uniqueGapSet).length;
   _statsFoundDetails={
     fixed:Object.keys(foundFixedSet).map(function(k){return foundFixedSet[k]||k;}).filter(Boolean),
-    unique:Object.keys(foundUniqueSet).map(function(k){return foundUniqueSet[k]||k;}).filter(Boolean)
+    unique_validated:Object.keys(foundUniqueValidatedSet).map(function(k){return foundUniqueValidatedSet[k]||k;}).filter(Boolean),
+    unique_observed:Object.keys(foundUniqueObservedSet).map(function(k){return foundUniqueObservedSet[k]||k;}).filter(Boolean),
+    unique_gap:Object.keys(uniqueGapSet).map(function(k){return uniqueGapSet[k]||k;}).filter(Boolean)
   };
   var landingTotal=filteredLandingEntries.length;
   var landingWithFound=filteredLandingEntries.filter(function(e){return String(e.found||'').trim().length>0;}).length;
@@ -1863,8 +1873,10 @@ async function loadStats(){
     +'<table style="width:100%;border-collapse:collapse;background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden">'
     +'<thead><tr style="background:#111827"><th style="text-align:left;padding:8px 10px;font-size:0.72rem;color:#94a3b8">Indicateur</th><th style="text-align:right;padding:8px 10px;font-size:0.72rem;color:#94a3b8">Valeur</th></tr></thead>'
     +'<tbody>'
-    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Trésors fixes trouvés</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right"><button type="button" onclick="openStatsFoundDetails(\'fixed\')" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;text-decoration:underline;font:inherit">'+foundFixed+' / '+totalFixed+'</button></td></tr>'
-    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Trésors uniques trouvés</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right"><button type="button" onclick="openStatsFoundDetails(\'unique\')" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;text-decoration:underline;font:inherit">'+foundUnique+' / '+totalUnique+'</button></td></tr>'
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Balises fixes trouvées (events + état)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right"><button type="button" onclick="openStatsFoundDetails(\'fixed\')" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;text-decoration:underline;font:inherit">'+foundFixed+' / '+totalFixed+'</button></td></tr>'
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Uniques validés gameplay (events)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right"><button type="button" onclick="openStatsFoundDetails(\'unique_validated\')" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;text-decoration:underline;font:inherit">'+foundUniqueValidated+' / '+totalUnique+'</button></td></tr>'
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Uniques observés (scan + landing + état)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right"><button type="button" onclick="openStatsFoundDetails(\'unique_observed\')" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;text-decoration:underline;font:inherit">'+foundUniqueObserved+' / '+totalUnique+'</button></td></tr>'
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Observés non validés (à vérifier)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right"><button type="button" onclick="openStatsFoundDetails(\'unique_gap\')" style="background:transparent;border:none;color:'+(uniqueGapCount?'#fbbf24':'#93c5fd')+';cursor:pointer;text-decoration:underline;font:inherit">'+uniqueGapCount+'</button></td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Uniques vus en scans bruts</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+foundUniqueFromScans+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">'+playersLabel+'</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+playersCount+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Nouveaux joueurs (inscription)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+newPlayersCount+'</td></tr>'
