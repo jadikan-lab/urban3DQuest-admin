@@ -1438,12 +1438,13 @@ async function loadLandingSummary(){
           withFound:Number(j.with_found||0),
           withoutFound:Number(j.without_found||0),
           lastAt:String(j.last_at||''),
-          lastFound:String(j.last_found||'')
+          lastFound:String(j.last_found||''),
+          entries:Array.isArray(j.entries)?j.entries:[]
         };
       }
     }
   }catch(_e){}
-  return {available:false,total:0,withFound:0,withoutFound:0,lastAt:'',lastFound:''};
+  return {available:false,total:0,withFound:0,withoutFound:0,lastAt:'',lastFound:'',entries:[]};
 }
 async function loadStats(){
   var r1=await db.from('treasures').select('id,type,found_by');
@@ -1476,11 +1477,31 @@ async function loadStats(){
     }
   }
   var landingRows='';
+  var landingList='';
   if(landing.available){
+    var entries=(landing.entries||[]).slice().reverse();
+    landingList='<div style="margin-top:8px;background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:8px;max-height:220px;overflow:auto">'
+      +(entries.length?entries.map(function(e){
+        var ts='—';
+        try{
+          var d=new Date(String(e.created_at||''));
+          ts=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        }catch(_e){
+          ts=String(e.created_at||'—');
+        }
+        var found=String(e.found||'').trim();
+        return '<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 4px;border-bottom:1px solid rgba(148,163,184,.12);font-size:0.72rem">'
+          +'<span style="color:#cbd5e1">'+escHtml(ts)+'</span>'
+          +'<span style="font-family:var(--mono);color:'+(found?'#86efac':'#94a3b8')+'">'+escHtml(found||'visite sans code')+'</span>'
+          +'</div>';
+      }).join(''):'<div style="font-size:0.72rem;color:#94a3b8;padding:4px">Aucune connexion enregistrée.</div>')
+      +'</div>';
     landingRows='<div class="stat-row"><span>Landing · arrivées</span><span>'+landing.total+'</span></div>'
       +'<div class="stat-row"><span>Landing · avec QR</span><span>'+landing.withFound+'</span></div>'
       +'<div class="stat-row"><span>Landing · dernier hit</span><span style="font-size:0.75rem">'+escHtml(lastLanding)+'</span></div>'
-      +'<div class="stat-row"><span>Conversion inscriptions</span><span>'+conversion+'</span></div>';
+      +'<div class="stat-row"><span>Conversion inscriptions</span><span>'+conversion+'</span></div>'
+      +'<div style="font-size:0.72rem;color:#94a3b8;margin-top:6px">Connexions landing (date + heure)</div>'
+      +landingList;
   }else{
     landingRows='<div class="stat-row"><span>Landing</span><span style="color:#fbbf24">indisponible</span></div>';
   }
