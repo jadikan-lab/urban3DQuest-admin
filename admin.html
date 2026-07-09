@@ -653,7 +653,7 @@ function buildFoundQrUrl(id,meta){
   return (isSoloId||isSoloMeta||isSoloBatch)?buildSoloLandingUrl(id):buildGameUrl('found',id);
 }
 var ADMIN_UI_VERSION='v4.1';
-var ADMIN_BUILD_VERSION='20260709-pilotage-click-found-ids';
+var ADMIN_BUILD_VERSION='20260709-pilotage-landing-unique-coherence';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,prelaunchEnabled=false,egressEmergency=false,realtimeEnabled=false,photoDataUrls=[],adminMap=null,mapLayers=[],adminMapFixed=null,mapLayersFixed=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
 var _adminTitle=document.getElementById('adminTitle');
@@ -1773,10 +1773,6 @@ async function loadStats(){
     if(!foundUniqueSet[kk])foundUniqueSet[kk]=k;
   });
   foundUnique=Math.max(foundUnique,foundUniqueFromState,foundUniqueFromScans,Object.keys(foundUniqueSet).length);
-  _statsFoundDetails={
-    fixed:Object.keys(foundFixedSet).map(function(k){return foundFixedSet[k]||k;}).filter(Boolean),
-    unique:Object.keys(foundUniqueSet).map(function(k){return foundUniqueSet[k]||k;}).filter(Boolean)
-  };
 
   var landing=await loadLandingSummary();
   var filteredLandingEntries=[];
@@ -1798,6 +1794,25 @@ async function loadStats(){
       return true;
     });
   }
+  var foundUniqueIdsFromLanding={};
+  filteredLandingEntries.forEach(function(e){
+    var found=String(e.found||'').trim();
+    if(!found)return;
+    var foundUpper=found.toUpperCase();
+    var tt=treasureById[found]||treasureByIdUpper[foundUpper];
+    if(tt&&tt.type==='unique'){
+      foundUniqueIdsFromLanding[foundUpper]=found;
+    }
+  });
+  var foundUniqueFromLanding=Object.keys(foundUniqueIdsFromLanding).length;
+  Object.keys(foundUniqueIdsFromLanding).forEach(function(k){
+    if(!foundUniqueSet[k])foundUniqueSet[k]=foundUniqueIdsFromLanding[k];
+  });
+  foundUnique=Math.max(foundUnique,foundUniqueFromLanding,Object.keys(foundUniqueSet).length);
+  _statsFoundDetails={
+    fixed:Object.keys(foundFixedSet).map(function(k){return foundFixedSet[k]||k;}).filter(Boolean),
+    unique:Object.keys(foundUniqueSet).map(function(k){return foundUniqueSet[k]||k;}).filter(Boolean)
+  };
   var landingTotal=filteredLandingEntries.length;
   var landingWithFound=filteredLandingEntries.filter(function(e){return String(e.found||'').trim().length>0;}).length;
   var landingLast=filteredLandingEntries.slice().sort(function(a,b){return String(b.created_at||'').localeCompare(String(a.created_at||''));})[0]||null;
@@ -1856,6 +1871,7 @@ async function loadStats(){
     +(landing.available
       ?'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Arrivées landing</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+landingTotal+'</td></tr>'
       +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Arrivées avec QR</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+landingWithFound+'</td></tr>'
+      +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Uniques distincts vus sur landing</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+foundUniqueFromLanding+'</td></tr>'
       +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Dernier hit landing</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.75rem">'+escHtml(lastLanding)+'</td></tr>'
       :'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Landing</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;color:#fbbf24">indisponible</td></tr>'
       +'<tr><td colspan="2" style="padding:8px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">Uploader la dernière version de <code>landing-hit.php</code> pour activer le résumé JSON.</td></tr>')
