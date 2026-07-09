@@ -653,7 +653,7 @@ function buildFoundQrUrl(id,meta){
   return (isSoloId||isSoloMeta||isSoloBatch)?buildSoloLandingUrl(id):buildGameUrl('found',id);
 }
 var ADMIN_UI_VERSION='v4.1';
-var ADMIN_BUILD_VERSION='20260709-pilotage-clear-scan-report';
+var ADMIN_BUILD_VERSION='20260709-pilotage-coherent-gap-ux';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,prelaunchEnabled=false,egressEmergency=false,realtimeEnabled=false,photoDataUrls=[],adminMap=null,mapLayers=[],adminMapFixed=null,mapLayersFixed=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
 var _adminTitle=document.getElementById('adminTitle');
@@ -1472,6 +1472,7 @@ var _statsFilterPeriod='all';
 var _statsFilterFrom='';
 var _statsFilterTo='';
 var _statsFoundDetails={fixed:[],unique_validated:[],unique_observed:[],unique_gap:[]};
+var _statsFoundMeta={unique_gap:{}};
 function _statsWindow(){
   var now=new Date();
   if(_statsFilterPeriod==='today'){
@@ -1509,9 +1510,28 @@ function onStatsFilterChange(){
 function openStatsFoundDetails(kind){
   var box=document.getElementById('statsFoundDetailsBox');
   if(!box)return;
-  var ids=((_statsFoundDetails&&_statsFoundDetails[kind])||[]).slice().sort(function(a,b){
-    return String(a||'').localeCompare(String(b||''),'fr',{sensitivity:'base'});
-  });
+  var raw=((_statsFoundDetails&&_statsFoundDetails[kind])||[]).slice();
+  var gapMeta=((_statsFoundMeta&&_statsFoundMeta.unique_gap)||{});
+  var ids=raw;
+  if(kind==='unique_gap'){
+    ids.sort(function(a,b){
+      var ka=String(a||'').toUpperCase();
+      var kb=String(b||'').toUpperCase();
+      var ma=gapMeta[ka]||{};
+      var mb=gapMeta[kb]||{};
+      var ca=(Number(ma.scanCount||0)+Number(ma.landingCount||0));
+      var cb=(Number(mb.scanCount||0)+Number(mb.landingCount||0));
+      if(cb!==ca)return cb-ca;
+      var la=String(ma.lastAt||'');
+      var lb=String(mb.lastAt||'');
+      if(lb!==la)return lb.localeCompare(la,'fr',{sensitivity:'base'});
+      return ka.localeCompare(kb,'fr',{sensitivity:'base'});
+    });
+  }else{
+    ids.sort(function(a,b){
+      return String(a||'').localeCompare(String(b||''),'fr',{sensitivity:'base'});
+    });
+  }
   var titleMap={
     fixed:'Balises fixes trouvées',
     unique_validated:'Trésors uniques validés (events)',
@@ -1536,6 +1556,16 @@ function openStatsFoundDetails(kind){
     +'</div>'
     +'<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">'
     +ids.map(function(id){
+      if(kind==='unique_gap'){
+        var k=String(id||'').toUpperCase();
+        var m=gapMeta[k]||{};
+        var totalHits=(Number(m.scanCount||0)+Number(m.landingCount||0));
+        var lastTxt='';
+        if(m.lastAt){
+          try{lastTxt=' · '+new Date(String(m.lastAt)).toLocaleDateString('fr-FR')+' '+new Date(String(m.lastAt)).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});}catch(_e){lastTxt='';}
+        }
+        return '<span style="font-family:var(--mono);font-size:0.72rem;padding:4px 7px;border-radius:8px;border:1px solid #78350f;background:#422006;color:#fde68a">'+escHtml(id)+' · '+totalHits+lastTxt+'</span>';
+      }
       return '<span style="font-family:var(--mono);font-size:0.72rem;padding:4px 7px;border-radius:8px;border:1px solid #334155;background:#111827;color:#e2e8f0">'+escHtml(id)+'</span>';
     }).join('')
     +'</div>'
@@ -1673,12 +1703,11 @@ async function loadStats(){
   var foundFixedIdsFromEvents={};
   var foundUniqueIds={};
   filteredEvents.forEach(function(e){
-    var tid=String(e.treasure_id||'');
+    var tid=String(e.treasure_id||'').trim();
     if(!tid)return;
-    if(e.treasure_type==='fixed')foundFixedIdsFromEvents[tid]=1;
-    if(e.treasure_type==='unique')foundUniqueIds[tid]=1;
+    if(e.treasure_type==='fixed')foundFixedIdsFromEvents[tid.toUpperCase()]=tid;
+    if(e.treasure_type==='unique')foundUniqueIds[tid.toUpperCase()]=tid;
   });
-  var foundFixedFromEvents=Object.keys(foundFixedIdsFromEvents).length;
   var foundFixedFromState=filteredTreasures.filter(function(x){
     if(x.type!=='fixed')return false;
     return !!(String(x.found_by||'').trim()||x.found_at);
@@ -1691,11 +1720,11 @@ async function loadStats(){
     if(id)foundFixedIdsFromState[id.toUpperCase()]=id;
   });
   var foundFixedSet={};
-  Object.keys(foundFixedIdsFromEvents).forEach(function(k){foundFixedSet[String(k||'').toUpperCase()]=k;});
+  Object.keys(foundFixedIdsFromEvents).forEach(function(k){foundFixedSet[k]=foundFixedIdsFromEvents[k];});
   Object.keys(foundFixedIdsFromState).forEach(function(k){foundFixedSet[k]=foundFixedIdsFromState[k];});
-  var foundFixed=Math.max(foundFixedFromEvents,foundFixedFromState,Object.keys(foundFixedSet).length);
+  var foundFixed=Math.max(foundFixedFromState,Object.keys(foundFixedSet).length);
   var foundUniqueValidatedSet={};
-  Object.keys(foundUniqueIds).forEach(function(k){foundUniqueValidatedSet[String(k||'').toUpperCase()]=k;});
+  Object.keys(foundUniqueIds).forEach(function(k){foundUniqueValidatedSet[k]=foundUniqueIds[k];});
 
   var playersCount;
   var playersLabel;
@@ -1767,7 +1796,7 @@ async function loadStats(){
     if(!tt||tt.type!=='unique')return;
     var st=String(s.status||'').toLowerCase();
     if(!uniqueScanStatuses[st])return;
-    foundUniqueIdsFromScans[tid.toUpperCase()]=1;
+    foundUniqueIdsFromScans[tid.toUpperCase()]=tid;
   });
   var foundUniqueFromScans=Object.keys(foundUniqueIdsFromScans).length;
 
@@ -1805,9 +1834,7 @@ async function loadStats(){
   var foundUniqueObservedSet={};
   Object.keys(foundUniqueIdsFromState).forEach(function(k){foundUniqueObservedSet[k]=foundUniqueIdsFromState[k];});
   Object.keys(foundUniqueIdsFromScans).forEach(function(k){
-    var kk=String(k||'').toUpperCase();
-    if(!kk)return;
-    if(!foundUniqueObservedSet[kk])foundUniqueObservedSet[kk]=k;
+    if(!foundUniqueObservedSet[k])foundUniqueObservedSet[k]=foundUniqueIdsFromScans[k];
   });
   Object.keys(foundUniqueIdsFromLanding).forEach(function(k){
     if(!foundUniqueObservedSet[k])foundUniqueObservedSet[k]=foundUniqueIdsFromLanding[k];
@@ -1817,12 +1844,29 @@ async function loadStats(){
   var uniqueGapSet={};
   Object.keys(foundUniqueObservedSet).forEach(function(k){if(!foundUniqueValidatedSet[k])uniqueGapSet[k]=foundUniqueObservedSet[k];});
   var uniqueGapCount=Object.keys(uniqueGapSet).length;
+  var uniqueGapMeta={};
+  Object.keys(uniqueGapSet).forEach(function(k){uniqueGapMeta[k]={scanCount:0,landingCount:0,lastAt:''};});
+  filteredScans.forEach(function(s){
+    var tid=String(s.treasure_id||'').trim().toUpperCase();
+    if(!tid||!uniqueGapMeta[tid])return;
+    uniqueGapMeta[tid].scanCount+=1;
+    var scAt=String(s.created_at||'');
+    if(scAt&&(!uniqueGapMeta[tid].lastAt||scAt>uniqueGapMeta[tid].lastAt))uniqueGapMeta[tid].lastAt=scAt;
+  });
+  filteredLandingEntries.forEach(function(e){
+    var found=String(e.found||'').trim().toUpperCase();
+    if(!found||!uniqueGapMeta[found])return;
+    uniqueGapMeta[found].landingCount+=1;
+    var lAt=String(e.created_at||'');
+    if(lAt&&(!uniqueGapMeta[found].lastAt||lAt>uniqueGapMeta[found].lastAt))uniqueGapMeta[found].lastAt=lAt;
+  });
   _statsFoundDetails={
     fixed:Object.keys(foundFixedSet).map(function(k){return foundFixedSet[k]||k;}).filter(Boolean),
     unique_validated:Object.keys(foundUniqueValidatedSet).map(function(k){return foundUniqueValidatedSet[k]||k;}).filter(Boolean),
     unique_observed:Object.keys(foundUniqueObservedSet).map(function(k){return foundUniqueObservedSet[k]||k;}).filter(Boolean),
     unique_gap:Object.keys(uniqueGapSet).map(function(k){return uniqueGapSet[k]||k;}).filter(Boolean)
   };
+  _statsFoundMeta={unique_gap:uniqueGapMeta};
   var landingTotal=filteredLandingEntries.length;
   var landingWithFound=filteredLandingEntries.filter(function(e){return String(e.found||'').trim().length>0;}).length;
   var landingLast=filteredLandingEntries.slice().sort(function(a,b){return String(b.created_at||'').localeCompare(String(a.created_at||''));})[0]||null;
