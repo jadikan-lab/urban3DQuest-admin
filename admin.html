@@ -653,7 +653,7 @@ function buildFoundQrUrl(id,meta){
   return (isSoloId||isSoloMeta||isSoloBatch)?buildSoloLandingUrl(id):buildGameUrl('found',id);
 }
 var ADMIN_UI_VERSION='v4.1';
-var ADMIN_BUILD_VERSION='20260709-pilotage-family-filters';
+var ADMIN_BUILD_VERSION='20260709-pilotage-quest-period';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,prelaunchEnabled=false,egressEmergency=false,realtimeEnabled=false,photoDataUrls=[],adminMap=null,mapLayers=[],adminMapFixed=null,mapLayersFixed=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
 var _adminTitle=document.getElementById('adminTitle');
@@ -1467,6 +1467,44 @@ var _landingEntriesCache=[];
 var _landingFilterDay='';
 var _landingFilterFamily='';
 var _landingFilterCode='';
+var _statsFilterQuest='';
+var _statsFilterPeriod='all';
+var _statsFilterFrom='';
+var _statsFilterTo='';
+function _statsWindow(){
+  var now=new Date();
+  if(_statsFilterPeriod==='today'){
+    var s=new Date(now.getFullYear(),now.getMonth(),now.getDate(),0,0,0,0);
+    return {from:s,to:null};
+  }
+  if(_statsFilterPeriod==='7d')return {from:new Date(now.getTime()-7*24*60*60*1000),to:null};
+  if(_statsFilterPeriod==='30d')return {from:new Date(now.getTime()-30*24*60*60*1000),to:null};
+  if(_statsFilterPeriod==='custom'){
+    var from=_statsFilterFrom?new Date(_statsFilterFrom+'T00:00:00'):null;
+    var to=_statsFilterTo?new Date(_statsFilterTo+'T23:59:59'):null;
+    return {from:isFinite((from||{}).getTime)?from:null,to:isFinite((to||{}).getTime)?to:null};
+  }
+  return {from:null,to:null};
+}
+function _inStatsWindow(iso,window){
+  if(!window||(!window.from&&!window.to))return true;
+  var d=new Date(String(iso||''));
+  if(!isFinite(d.getTime()))return false;
+  if(window.from&&d<window.from)return false;
+  if(window.to&&d>window.to)return false;
+  return true;
+}
+function onStatsFilterChange(){
+  var q=document.getElementById('statsQuestFilter');
+  var p=document.getElementById('statsPeriodFilter');
+  var f=document.getElementById('statsDateFrom');
+  var t=document.getElementById('statsDateTo');
+  _statsFilterQuest=q?String(q.value||''):'';
+  _statsFilterPeriod=p?String(p.value||'all'):'all';
+  _statsFilterFrom=f?String(f.value||''):'';
+  _statsFilterTo=t?String(t.value||''):'';
+  loadStats();
+}
 function _landingCodeFamily(foundRaw){
   var found=String(foundRaw||'').trim().toUpperCase();
   if(found.indexOf('LUX-')===0)return 'lux';
@@ -1542,32 +1580,116 @@ function renderLandingEntriesTable(){
   }).join('');
 }
 async function loadStats(){
-  var r1=await db.from('treasures').select('id,type,found_by');
-  var r2=await db.from('players').select('pseudo,found_count,score');
-  var r3=await db.from('events').select('duration_sec').eq('treasure_type','unique');
+  var r1=await db.from('treasures').select('id,type,found_by,quest');
+  var r2=await db.from('players').select('pseudo,found_count,score,joined_at');
+  var r3=await db.from('events').select('pseudo,treasure_id,treasure_type,duration_sec,created_at');
   var t=r1.data||[];
   var p=r2.data||[];
-  var flashEvents=(r3.data||[]).filter(function(e){return e.duration_sec!==null&&e.duration_sec!==undefined;});
+  var events=r3.data||[];
+
+  var questValues=[];
+  var qSeen={};
+  t.forEach(function(x){
+    var qn=String(x.quest||'').trim();
+    if(!qn||qSeen[qn])return;
+    qSeen[qn]=1;
+    questValues.push(qn);
+  });
+  questValues.sort(function(a,b){return a.localeCompare(b,'fr',{sensitivity:'base'});});
+
+  var window=_statsWindow();
+  var treasureById={};
+  t.forEach(function(x){treasureById[String(x.id||'')]=x;});
+  var filteredTreasures=t.filter(function(x){
+    if(_statsFilterQuest&&String(x.quest||'').trim()!==_statsFilterQuest)return false;
+    return true;
+  });
+  var filteredTreasureIds={};
+  filteredTreasures.forEach(function(x){filteredTreasureIds[String(x.id||'')]=1;});
+
+  var filteredEvents=events.filter(function(e){
+    if(!_inStatsWindow(e.created_at,window))return false;
+    if(_statsFilterQuest){
+      var tid=String(e.treasure_id||'');
+      if(!filteredTreasureIds[tid])return false;
+    }
+    return true;
+  });
+
+  var flashEvents=filteredEvents.filter(function(e){return e.treasure_type==='unique'&&e.duration_sec!==null&&e.duration_sec!==undefined;});
   var avgFlashSec=flashEvents.length?Math.round(flashEvents.reduce(function(sum,e){return sum+(Number(e.duration_sec)||0);},0)/flashEvents.length):null;
   var bestFlashSec=flashEvents.length?flashEvents.reduce(function(min,e){var v=Number(e.duration_sec)||0;return v<min?v:min;},Number.MAX_SAFE_INTEGER):null;
   var fmtFlash=function(sec){if(sec===null||sec===undefined||!isFinite(sec))return '—';var s=Math.max(0,Math.round(sec));var h=Math.floor(s/3600);var m=Math.floor((s%3600)/60);var ss=s%60;if(h>0)return h+'h '+String(m).padStart(2,'0')+'m '+String(ss).padStart(2,'0')+'s';if(m>0)return m+'m '+String(ss).padStart(2,'0')+'s';return ss+'s';};
-  var totalFixed=t.filter(function(x){return x.type==='fixed';}).length;
-  var totalUnique=t.filter(function(x){return x.type==='unique';}).length;
-  var foundFixed=t.filter(function(x){return x.type==='fixed'&&x.found_by&&x.found_by.length>0;}).length;
-  var foundUnique=t.filter(function(x){return x.type==='unique'&&x.found_by&&x.found_by.length>0;}).length;
-  var topPlayer=p.length?p.slice().sort(function(a,b){return b.found_count-a.found_count||(a.score-b.score);})[0]:null;
+  var totalFixed=filteredTreasures.filter(function(x){return x.type==='fixed';}).length;
+  var totalUnique=filteredTreasures.filter(function(x){return x.type==='unique';}).length;
+
+  var foundFixedIds={};
+  var foundUniqueIds={};
+  filteredEvents.forEach(function(e){
+    var tid=String(e.treasure_id||'');
+    if(!tid)return;
+    if(e.treasure_type==='fixed')foundFixedIds[tid]=1;
+    if(e.treasure_type==='unique')foundUniqueIds[tid]=1;
+  });
+  var foundFixed=Object.keys(foundFixedIds).length;
+  var foundUnique=Object.keys(foundUniqueIds).length;
+
+  var playersCount;
+  if(_statsFilterQuest||_statsFilterPeriod!=='all'){
+    var activePlayers={};
+    filteredEvents.forEach(function(e){
+      var pseudo=String(e.pseudo||'').trim();
+      if(pseudo)activePlayers[pseudo]=1;
+    });
+    playersCount=Object.keys(activePlayers).length;
+  }else{
+    playersCount=p.length;
+  }
+
+  var topPlayer=null;
+  if(filteredEvents.length){
+    var agg={};
+    filteredEvents.forEach(function(e){
+      var pseudo=String(e.pseudo||'').trim();
+      if(!pseudo)return;
+      if(!agg[pseudo])agg[pseudo]={pseudo:pseudo,count:0,score:0};
+      agg[pseudo].count+=1;
+      agg[pseudo].score+=(Number(e.duration_sec)||0);
+    });
+    var list=Object.keys(agg).map(function(k){return agg[k];});
+    list.sort(function(a,b){return b.count-a.count||(a.score-b.score);});
+    topPlayer=list[0]||null;
+  }
+
   var landing=await loadLandingSummary();
+  var filteredLandingEntries=[];
+  if(landing.available){
+    filteredLandingEntries=(landing.entries||[]).filter(function(e){
+      if(!_inStatsWindow(e.created_at,window))return false;
+      if(_statsFilterQuest){
+        var found=String(e.found||'').trim();
+        if(!found)return false;
+        var tt=treasureById[found];
+        if(!tt)return false;
+        return String(tt.quest||'').trim()===_statsFilterQuest;
+      }
+      return true;
+    });
+  }
+  var landingTotal=filteredLandingEntries.length;
+  var landingWithFound=filteredLandingEntries.filter(function(e){return String(e.found||'').trim().length>0;}).length;
+  var landingLast=filteredLandingEntries.slice().sort(function(a,b){return String(b.created_at||'').localeCompare(String(a.created_at||''));})[0]||null;
   var lastLanding='—';
-  if(landing.available&&landing.lastAt){
+  if(landing.available&&landingLast){
     try{
-      var d=new Date(landing.lastAt);
-      var foundTxt=landing.lastFound?(' · '+landing.lastFound):'';
+      var d=new Date(String(landingLast.created_at||''));
+      var foundTxt=landingLast.found?(' · '+landingLast.found):'';
       lastLanding=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})+foundTxt;
     }catch(_e){
-      lastLanding=landing.lastAt+(landing.lastFound?(' · '+landing.lastFound):'');
+      lastLanding=String(landingLast.created_at||'—')+(landingLast.found?(' · '+landingLast.found):'');
     }
   }
-  var entries=(landing.entries||[]).slice().reverse();
+  var entries=filteredLandingEntries.slice().sort(function(a,b){return String(a.created_at||'').localeCompare(String(b.created_at||''));});
   _landingEntriesCache=entries;
   var dayValues=[];
   var daySeen={};
@@ -1587,21 +1709,35 @@ async function loadStats(){
     return a.localeCompare(b,'fr',{sensitivity:'base'});
   });
   var summaryTable=''
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin:0 0 10px">'
+      +'<label style="font-size:0.72rem;color:#94a3b8">Quête<br><select id="statsQuestFilter" onchange="onStatsFilterChange()" style="margin-top:4px;min-width:180px;padding:7px 9px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:0.78rem"><option value="">Toutes les quêtes</option>'
+      +questValues.map(function(v){return '<option value="'+escHtml(v)+'"'+(_statsFilterQuest===v?' selected':'')+'>'+escHtml(v)+'</option>';}).join('')
+      +'</select></label>'
+      +'<label style="font-size:0.72rem;color:#94a3b8">Période<br><select id="statsPeriodFilter" onchange="onStatsFilterChange()" style="margin-top:4px;min-width:150px;padding:7px 9px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:0.78rem">'
+      +'<option value="all"'+(_statsFilterPeriod==='all'?' selected':'')+'>Toute période</option>'
+      +'<option value="today"'+(_statsFilterPeriod==='today'?' selected':'')+'>Aujourd\'hui</option>'
+      +'<option value="7d"'+(_statsFilterPeriod==='7d'?' selected':'')+'>7 jours</option>'
+      +'<option value="30d"'+(_statsFilterPeriod==='30d'?' selected':'')+'>30 jours</option>'
+      +'<option value="custom"'+(_statsFilterPeriod==='custom'?' selected':'')+'>Personnalisée</option>'
+      +'</select></label>'
+      +'<label style="font-size:0.72rem;color:#94a3b8;'+(_statsFilterPeriod==='custom'?'':'display:none')+'">Du<br><input type="date" id="statsDateFrom" value="'+escHtml(_statsFilterFrom)+'" onchange="onStatsFilterChange()" style="margin-top:4px;padding:7px 9px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:0.78rem"></label>'
+      +'<label style="font-size:0.72rem;color:#94a3b8;'+(_statsFilterPeriod==='custom'?'':'display:none')+'">Au<br><input type="date" id="statsDateTo" value="'+escHtml(_statsFilterTo)+'" onchange="onStatsFilterChange()" style="margin-top:4px;padding:7px 9px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:0.78rem"></label>'
+    +'</div>'
     +'<table style="width:100%;border-collapse:collapse;background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden">'
     +'<thead><tr style="background:#111827"><th style="text-align:left;padding:8px 10px;font-size:0.72rem;color:#94a3b8">Indicateur</th><th style="text-align:right;padding:8px 10px;font-size:0.72rem;color:#94a3b8">Valeur</th></tr></thead>'
     +'<tbody>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Trésors fixes trouvés</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+foundFixed+' / '+totalFixed+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Trésors uniques trouvés</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+foundUnique+' / '+totalUnique+'</td></tr>'
-    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Joueurs inscrits</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+p.length+'</td></tr>'
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Joueurs inscrits</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+playersCount+'</td></tr>'
     +(landing.available
-      ?'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Arrivées landing</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+landing.total+'</td></tr>'
-      +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Arrivées avec QR</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+landing.withFound+'</td></tr>'
+      ?'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Arrivées landing</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+landingTotal+'</td></tr>'
+      +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Arrivées avec QR</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+landingWithFound+'</td></tr>'
       +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Dernier hit landing</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.75rem">'+escHtml(lastLanding)+'</td></tr>'
       :'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Landing</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;color:#fbbf24">indisponible</td></tr>'
       +'<tr><td colspan="2" style="padding:8px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">Uploader la dernière version de <code>landing-hit.php</code> pour activer le résumé JSON.</td></tr>')
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Temps flash moyen</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+fmtFlash(avgFlashSec)+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Meilleur temps flash</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+fmtFlash(bestFlashSec)+'</td></tr>'
-    +(topPlayer?'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Meilleur joueur</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+topPlayer.pseudo+' ('+topPlayer.found_count+')</td></tr>':'')
+    +(topPlayer?'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Meilleur joueur</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+topPlayer.pseudo+' ('+topPlayer.count+')</td></tr>':'')
     +'</tbody></table>';
 
   var entriesTable=''
