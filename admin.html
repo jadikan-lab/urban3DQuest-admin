@@ -653,7 +653,7 @@ function buildFoundQrUrl(id,meta){
   return (isSoloId||isSoloMeta||isSoloBatch)?buildSoloLandingUrl(id):buildGameUrl('found',id);
 }
 var ADMIN_UI_VERSION='v4.1';
-var ADMIN_BUILD_VERSION='20260709-pilotage-new-players-fix';
+var ADMIN_BUILD_VERSION='20260709-pilotage-landing-lux-fix';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,prelaunchEnabled=false,egressEmergency=false,realtimeEnabled=false,photoDataUrls=[],adminMap=null,mapLayers=[],adminMapFixed=null,mapLayersFixed=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
 var _adminTitle=document.getElementById('adminTitle');
@@ -1602,6 +1602,11 @@ async function loadStats(){
   var window=_statsWindow();
   var treasureById={};
   t.forEach(function(x){treasureById[String(x.id||'')]=x;});
+  var treasureByIdUpper={};
+  t.forEach(function(x){
+    var id=String(x.id||'').trim().toUpperCase();
+    if(id)treasureByIdUpper[id]=x;
+  });
   var filteredTreasures=t.filter(function(x){
     if(_statsFilterQuest&&String(x.quest||'').trim()!==_statsFilterQuest)return false;
     return true;
@@ -1698,9 +1703,14 @@ async function loadStats(){
       if(_statsFilterQuest){
         var found=String(e.found||'').trim();
         if(!found)return false;
-        var tt=treasureById[found];
+        var foundUpper=found.toUpperCase();
+        var tt=treasureById[found]||treasureByIdUpper[foundUpper];
         if(!tt)return false;
-        return String(tt.quest||'').trim()===_statsFilterQuest;
+        var ttQuest=String(tt.quest||'').trim();
+        if(ttQuest===_statsFilterQuest)return true;
+        // LUX is used as transversal solo funnel; keep it visible even if quest is not set on the treasure row.
+        if(_landingCodeFamily(foundUpper)==='lux'&&!ttQuest)return true;
+        return false;
       }
       return true;
     });
