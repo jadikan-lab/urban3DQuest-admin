@@ -653,7 +653,7 @@ function buildFoundQrUrl(id,meta){
   return (isSoloId||isSoloMeta||isSoloBatch)?buildSoloLandingUrl(id):buildGameUrl('found',id);
 }
 var ADMIN_UI_VERSION='v4.1';
-var ADMIN_BUILD_VERSION='20260709-pilotage-raw-scans';
+var ADMIN_BUILD_VERSION='20260709-pilotage-fresh-players-fixed';
 var db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 var currentLoc=null,currentType='unique',visVisible=false,gameActive=true,modeMap=true,modeCompass=true,teaserEnabled=false,prelaunchEnabled=false,egressEmergency=false,realtimeEnabled=false,photoDataUrls=[],adminMap=null,mapLayers=[],adminMapFixed=null,mapLayersFixed=[],questList=[],activeQuests=[],rewardMessages={},relocate=null;
 var _adminTitle=document.getElementById('adminTitle');
@@ -1580,7 +1580,7 @@ function renderLandingEntriesTable(){
   }).join('');
 }
 async function loadStats(){
-  var r1=await db.from('treasures').select('id,type,found_by,quest');
+  var r1=await db.from('treasures').select('id,type,found_by,found_at,quest');
   var r2=await db.from('players').select('pseudo,found_count,score,joined_at');
   var r3=await db.from('events').select('pseudo,treasure_id,treasure_type,duration_sec,created_at');
   var r4=await db.from('scan_attempts').select('created_at,treasure_id,status');
@@ -1625,18 +1625,24 @@ async function loadStats(){
   var totalFixed=filteredTreasures.filter(function(x){return x.type==='fixed';}).length;
   var totalUnique=filteredTreasures.filter(function(x){return x.type==='unique';}).length;
 
-  var foundFixedIds={};
+  var foundFixedIdsFromEvents={};
   var foundUniqueIds={};
   filteredEvents.forEach(function(e){
     var tid=String(e.treasure_id||'');
     if(!tid)return;
-    if(e.treasure_type==='fixed')foundFixedIds[tid]=1;
+    if(e.treasure_type==='fixed')foundFixedIdsFromEvents[tid]=1;
     if(e.treasure_type==='unique')foundUniqueIds[tid]=1;
   });
-  var foundFixed=Object.keys(foundFixedIds).length;
+  var foundFixedFromEvents=Object.keys(foundFixedIdsFromEvents).length;
+  var foundFixedFromState=filteredTreasures.filter(function(x){
+    if(x.type!=='fixed')return false;
+    return !!(String(x.found_by||'').trim()||x.found_at);
+  }).length;
+  var foundFixed=Math.max(foundFixedFromEvents,foundFixedFromState);
   var foundUnique=Object.keys(foundUniqueIds).length;
 
   var playersCount;
+  var playersLabel;
   if(_statsFilterQuest||_statsFilterPeriod!=='all'){
     var activePlayers={};
     filteredEvents.forEach(function(e){
@@ -1644,9 +1650,20 @@ async function loadStats(){
       if(pseudo)activePlayers[pseudo]=1;
     });
     playersCount=Object.keys(activePlayers).length;
+    playersLabel='Joueurs actifs (events)';
   }else{
     playersCount=p.length;
+    playersLabel='Joueurs inscrits';
   }
+  var newPlayersCount=p.filter(function(pl){
+    if(!_inStatsWindow(pl.joined_at,window))return false;
+    if(_statsFilterQuest){
+      var pseudo=String(pl.pseudo||'').trim();
+      if(!pseudo)return false;
+      return filteredEvents.some(function(e){return String(e.pseudo||'').trim()===pseudo;});
+    }
+    return true;
+  }).length;
 
   var topPlayer=null;
   if(filteredEvents.length){
@@ -1745,7 +1762,8 @@ async function loadStats(){
     +'<tbody>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Trésors fixes trouvés</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+foundFixed+' / '+totalFixed+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Trésors uniques trouvés</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+foundUnique+' / '+totalUnique+'</td></tr>'
-    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Joueurs inscrits</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+playersCount+'</td></tr>'
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">'+playersLabel+'</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+playersCount+'</td></tr>'
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Nouveaux joueurs (inscription)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+newPlayersCount+'</td></tr>'
     +(landing.available
       ?'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Arrivées landing</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+landingTotal+'</td></tr>'
       +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Arrivées avec QR</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+landingWithFound+'</td></tr>'
