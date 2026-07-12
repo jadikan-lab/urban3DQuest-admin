@@ -1467,6 +1467,7 @@ var _landingEntriesCache=[];
 var _landingFilterDay='';
 var _landingFilterFamily='';
 var _landingFilterCode='';
+var _statsTreasureTypeByIdUpper={};
 var _statsFilterQuest='';
 var _statsFilterPeriod='all';
 var _statsFilterFrom='';
@@ -1689,8 +1690,16 @@ function closeStatsFoundDetails(){
 }
 function _landingCodeFamily(foundRaw){
   var found=String(foundRaw||'').trim().toUpperCase();
-  if(found.indexOf('LUX-')===0)return 'lux';
+  var typeFromDb=String((_statsTreasureTypeByIdUpper[found]||'')).toLowerCase();
+  if(typeFromDb==='fixed')return 'fix';
+  if(typeFromDb==='unique'){
+    if(found.indexOf('ARL-')===0)return 'arl';
+    return 'luxsolo';
+  }
+  if(found.indexOf('ARL-')===0)return 'arl';
+  if(found.indexOf('LUX-')===0)return 'luxsolo';
   if(found.indexOf('FIX-')===0)return 'fix';
+  if(found)return 'luxsolo';
   return 'other';
 }
 function _landingDayKey(createdAt){
@@ -1785,9 +1794,13 @@ async function loadStats(){
   var treasureById={};
   t.forEach(function(x){treasureById[String(x.id||'')]=x;});
   var treasureByIdUpper={};
+  _statsTreasureTypeByIdUpper={};
   t.forEach(function(x){
     var id=String(x.id||'').trim().toUpperCase();
-    if(id)treasureByIdUpper[id]=x;
+    if(id){
+      treasureByIdUpper[id]=x;
+      _statsTreasureTypeByIdUpper[id]=String(x.type||'').toLowerCase();
+    }
   });
   var filteredTreasures=t.filter(function(x){
     if(_statsFilterQuest&&String(x.quest||'').trim()!==_statsFilterQuest)return false;
@@ -1957,8 +1970,8 @@ async function loadStats(){
         if(!tt)return false;
         var ttQuest=String(tt.quest||'').trim();
         if(ttQuest===_statsFilterQuest)return true;
-        // LUX is used as transversal solo funnel; keep it visible even if quest is not set on the treasure row.
-        if(_landingCodeFamily(foundUpper)==='lux'&&!ttQuest)return true;
+        // LUX/Solo is used as transversal solo funnel; keep it visible even if quest is not set on the treasure row.
+        if(_landingCodeFamily(foundUpper)==='luxsolo'&&!ttQuest)return true;
         return false;
       }
       return true;
@@ -2137,9 +2150,10 @@ async function loadStats(){
       +'</select></label>'
       +'<label style="font-size:0.72rem;color:#94a3b8">Type de code<br><select id="landingFamilyFilter" onchange="renderLandingEntriesTable()" style="margin-top:4px;min-width:155px;padding:7px 9px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:0.78rem">'
       +'<option value=""'+(_landingFilterFamily===''?' selected':'')+'>Tout</option>'
-      +'<option value="lux"'+(_landingFilterFamily==='lux'?' selected':'')+'>LUX</option>'
+      +'<option value="luxsolo"'+(_landingFilterFamily==='luxsolo'?' selected':'')+'>LUX/Solo</option>'
+      +'<option value="arl"'+(_landingFilterFamily==='arl'?' selected':'')+'>ARL</option>'
       +'<option value="fix"'+(_landingFilterFamily==='fix'?' selected':'')+'>FIX</option>'
-      +'<option value="other"'+(_landingFilterFamily==='other'?' selected':'')+'>Autre</option>'
+      +'<option value="other"'+(_landingFilterFamily==='other'?' selected':'')+'>Autres codes</option>'
       +'</select></label>'
       +'<label style="font-size:0.72rem;color:#94a3b8">Code exact<br><select id="landingCodeFilter" onchange="renderLandingEntriesTable()" style="margin-top:4px;min-width:190px;padding:7px 9px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:0.78rem"><option value="">Tous les codes</option>'
       +codeValues.map(function(v){var txt=v==='__none__'?'visite sans code':v;return '<option value="'+escHtml(v)+'"'+(_landingFilterCode===v?' selected':'')+'>'+escHtml(txt)+'</option>';}).join('')
@@ -2170,27 +2184,113 @@ async function loadStats(){
     +summaryTable
     +'<div id="statsFoundDetailsBox"></div>'
     +entriesTable
-    +'<button class="btn" style="background:#1e293b;border:1px solid #334155;margin-top:12px;font-size:0.82rem;padding:10px" onclick="exportCSV()">⬇ Exporter events.csv (inclut duree_sec)</button>';
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'
+    +'<button class="btn" style="background:#1e293b;border:1px solid #334155;font-size:0.82rem;padding:10px" onclick="exportCSV()">⬇ Exporter events.csv (inclut duree_sec)</button>'
+    +'<button class="btn" style="background:#0f172a;border:1px solid #334155;font-size:0.82rem;padding:10px" onclick="exportLandingCSV()">⬇ Exporter landing.csv (filtres courants)</button>'
+    +'<button class="btn" style="background:#0b1220;border:1px solid #334155;font-size:0.82rem;padding:10px" onclick="exportLandingCSVAll()">⬇ Exporter landing.csv (tous logs source)</button>'
+    +'<button class="btn" style="background:#111827;border:1px solid #334155;font-size:0.82rem;padding:10px" onclick="exportScanAttemptsCSVAll()">⬇ Exporter scan_attempts.csv (tous logs)</button>'
+    +'</div>';
   renderLandingEntriesTable();
 }
 
 async function loadScanAttemptsJournal(){
   var el=document.getElementById('scanAttemptsDiv');
   if(!el)return;
-  el.innerHTML='<p style="color:#475569;text-align:center;padding:18px 0">Chargement des tentatives refusées…</p>';
+  el.innerHTML='<p style="color:#475569;text-align:center;padding:18px 0">Chargement du journal des scans…</p>';
   var countRes=await db.from('scan_attempts').select('id',{count:'exact',head:true});
   var rowsRes=await db.from('scan_attempts').select('created_at,pseudo,treasure_id,treasure_type,status,distance_m,proximity_m').order('created_at',{ascending:false}).limit(12);
   if(rowsRes.error){el.innerHTML='<p style="color:#f87171;padding:16px">'+escHtml(rowsRes.error.message)+'</p>';return;}
   var rows=rowsRes.data||[];
   var total=(countRes&&countRes.count)||rows.length||0;
   if(!rows.length){
-    el.innerHTML='<div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:12px"><div style="font-size:0.82rem;font-weight:700;color:#f8fafc;margin-bottom:4px">Tentatives de scan refusées</div><div style="font-size:0.75rem;color:#94a3b8">Aucune tentative enregistrée pour le moment.</div></div>';
+    el.innerHTML='<div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:12px"><div style="font-size:0.82rem;font-weight:700;color:#f8fafc;margin-bottom:4px">Journal scan_attempts (tous statuts)</div><div style="font-size:0.75rem;color:#94a3b8">Aucune tentative enregistrée pour le moment.</div></div>';
     return;
   }
-  el.innerHTML='<div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:12px"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px"><div><div style="font-size:0.82rem;font-weight:700;color:#f8fafc">Tentatives de scan refusées</div><div style="font-size:0.72rem;color:#94a3b8">'+total+' tentative'+(total>1?'s':'')+' enregistrée'+(total>1?'s':'')+'</div></div><div style="font-size:0.72rem;font-family:var(--mono);color:#fdba74;background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.24);padding:4px 8px;border-radius:999px">top '+rows.length+'</div></div><div style="display:flex;flex-direction:column;gap:6px">'+rows.map(function(r){var ts=new Date(r.created_at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});var dist=Number(r.distance_m||0);var prox=Number(r.proximity_m||0);return '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 10px;background:#111827;border:1px solid #1f2937;border-radius:10px"><span style="font-size:0.7rem;color:#94a3b8;font-family:var(--mono)">'+ts+'</span><span class="badge b-hidden">'+escHtml(String(r.status||'refusé'))+'</span><span style="font-size:0.82rem;font-weight:700;min-width:88px">'+escHtml(String(r.pseudo||'inconnu'))+'</span><span style="font-size:0.78rem;color:#cbd5e1">'+escHtml(String(r.treasure_id||'—'))+'</span><span style="font-size:0.72rem;color:#94a3b8">'+(dist?dist+'m':'—')+' / '+(prox?prox+'m':'—')+'</span></div>';}).join('')+'</div></div>';
+  el.innerHTML='<div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:12px"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px"><div><div style="font-size:0.82rem;font-weight:700;color:#f8fafc">Journal scan_attempts (tous statuts)</div><div style="font-size:0.72rem;color:#94a3b8">'+total+' log'+(total>1?'s':'')+' au total · aperçu des '+rows.length+' plus récents</div></div><div style="font-size:0.72rem;font-family:var(--mono);color:#fdba74;background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.24);padding:4px 8px;border-radius:999px">top '+rows.length+'</div></div><div style="display:flex;flex-direction:column;gap:6px">'+rows.map(function(r){var ts=new Date(r.created_at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});var dist=Number(r.distance_m||0);var prox=Number(r.proximity_m||0);return '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 10px;background:#111827;border:1px solid #1f2937;border-radius:10px"><span style="font-size:0.7rem;color:#94a3b8;font-family:var(--mono)">'+ts+'</span><span class="badge b-hidden">'+escHtml(String(r.status||'n/a'))+'</span><span style="font-size:0.82rem;font-weight:700;min-width:88px">'+escHtml(String(r.pseudo||'inconnu'))+'</span><span style="font-size:0.78rem;color:#cbd5e1">'+escHtml(String(r.treasure_id||'—'))+'</span><span style="font-size:0.72rem;color:#94a3b8">'+(dist?dist+'m':'—')+' / '+(prox?prox+'m':'—')+'</span></div>';}).join('')+'</div></div>';
 }
 
 async function exportCSV(){var r=await db.from('events').select('created_at,pseudo,treasure_id,treasure_type,duration_sec').order('created_at',{ascending:true});if(!r.data||!r.data.length){alert('Aucun événement enregistré.');return;}var header='date,pseudo,tresor_id,type,duree_sec\n';var rows=r.data.map(function(e){return[csvCell(new Date(e.created_at).toLocaleString('fr-FR')),csvCell(e.pseudo||''),csvCell(e.treasure_id||''),csvCell(e.treasure_type||''),csvCell(e.duration_sec||0)].join(',');}).join('\n');var blob=new Blob(['\ufeff'+header+rows],{type:'text/csv;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='urban3dquest_events.csv';document.body.appendChild(a);a.click();document.body.removeChild(a);}
+async function exportLandingCSV(){
+  var rows=(_landingEntriesCache||[]).slice().sort(function(a,b){return String(a.created_at||'').localeCompare(String(b.created_at||''));});
+  if(!rows.length){alert('Aucune entrée landing à exporter avec les filtres courants.');return;}
+  var header='date,found,code_family\n';
+  var body=rows.map(function(e){
+    var found=String(e.found||'').trim();
+    var family=_landingCodeFamily(found);
+    return [
+      csvCell(new Date(e.created_at).toLocaleString('fr-FR')),
+      csvCell(found),
+      csvCell(family)
+    ].join(',');
+  }).join('\n');
+  var blob=new Blob(['\ufeff'+header+body],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='urban3dquest_landing_logs.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+async function exportLandingCSVAll(){
+  var landing=await loadLandingSummary();
+  if(!landing||!landing.available){alert('Résumé landing indisponible.');return;}
+  var rows=(landing.entries||[]).slice().sort(function(a,b){return String(a.created_at||'').localeCompare(String(b.created_at||''));});
+  if(!rows.length){alert('Aucun log landing disponible à exporter.');return;}
+  var header='date,found,code_family\n';
+  var body=rows.map(function(e){
+    var found=String(e.found||'').trim();
+    var family=_landingCodeFamily(found);
+    return [
+      csvCell(new Date(e.created_at).toLocaleString('fr-FR')),
+      csvCell(found),
+      csvCell(family)
+    ].join(',');
+  }).join('\n');
+  var blob=new Blob(['\ufeff'+header+body],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='urban3dquest_landing_logs_all.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+async function exportScanAttemptsCSVAll(){
+  var batchSize=1000;
+  var offset=0;
+  var out=[];
+  while(true){
+    var q=await db.from('scan_attempts')
+      .select('created_at,pseudo,treasure_id,treasure_type,status,distance_m,proximity_m')
+      .order('created_at',{ascending:true})
+      .range(offset,offset+batchSize-1);
+    if(q.error){alert('Erreur export scan_attempts: '+q.error.message);return;}
+    var chunk=q.data||[];
+    if(!chunk.length)break;
+    out=out.concat(chunk);
+    if(chunk.length<batchSize)break;
+    offset+=batchSize;
+  }
+  if(!out.length){alert('Aucun log scan_attempts à exporter.');return;}
+  var header='date,pseudo,tresor_id,tresor_type,status,distance_m,proximity_m\n';
+  var body=out.map(function(r){
+    return [
+      csvCell(new Date(r.created_at).toLocaleString('fr-FR')),
+      csvCell(r.pseudo||''),
+      csvCell(r.treasure_id||''),
+      csvCell(r.treasure_type||''),
+      csvCell(r.status||''),
+      csvCell(r.distance_m==null?'':r.distance_m),
+      csvCell(r.proximity_m==null?'':r.proximity_m)
+    ].join(',');
+  }).join('\n');
+  var blob=new Blob(['\ufeff'+header+body],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='urban3dquest_scan_attempts_all.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
 function escXml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&apos;');}
 function detectQrModuleSize(ctx,w,h){
   var img=ctx.getImageData(0,0,w,h).data;
