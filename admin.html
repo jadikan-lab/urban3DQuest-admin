@@ -1471,8 +1471,118 @@ var _statsFilterQuest='';
 var _statsFilterPeriod='all';
 var _statsFilterFrom='';
 var _statsFilterTo='';
+var _statsTimelineFamilyFilter='all';
 var _statsFoundDetails={fixed:[],unique_validated:[],unique_observed:[],unique_gap:[]};
 var _statsFoundMeta={unique_gap:{}};
+var _statsTimelineDetails={day:{},week:{}};
+function _statsDayKey(createdAt){
+  try{
+    var d=new Date(String(createdAt||''));
+    if(!isFinite(d.getTime()))return '';
+    var y=d.getFullYear();
+    var m=String(d.getMonth()+1).padStart(2,'0');
+    var day=String(d.getDate()).padStart(2,'0');
+    return y+'-'+m+'-'+day;
+  }catch(_e){
+    return '';
+  }
+}
+function _statsWeekStartKey(createdAt){
+  try{
+    var d=new Date(String(createdAt||''));
+    if(!isFinite(d.getTime()))return '';
+    var localMidnight=new Date(d.getFullYear(),d.getMonth(),d.getDate(),0,0,0,0);
+    var day=localMidnight.getDay();
+    var mondayOffset=(day+6)%7;
+    localMidnight.setDate(localMidnight.getDate()-mondayOffset);
+    var y=localMidnight.getFullYear();
+    var m=String(localMidnight.getMonth()+1).padStart(2,'0');
+    var dd=String(localMidnight.getDate()).padStart(2,'0');
+    return y+'-'+m+'-'+dd;
+  }catch(_e){
+    return '';
+  }
+}
+function _statsFmtDayLabel(dayKey){
+  try{
+    var d=new Date(dayKey+'T00:00:00');
+    if(!isFinite(d.getTime()))return dayKey;
+    return d.toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'});
+  }catch(_e){
+    return dayKey;
+  }
+}
+function _statsFmtWeekLabel(weekStartKey){
+  try{
+    var start=new Date(weekStartKey+'T00:00:00');
+    if(!isFinite(start.getTime()))return 'Semaine '+weekStartKey;
+    var end=new Date(start.getTime());
+    end.setDate(end.getDate()+6);
+    return 'Semaine du '+start.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})+' au '+end.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'});
+  }catch(_e){
+    return 'Semaine '+weekStartKey;
+  }
+}
+function _statsEventFamily(e){
+  var type=String((e&&e.treasure_type)||'').toLowerCase();
+  var id=String((e&&e.treasure_id)||'').trim().toUpperCase();
+  if(type==='fixed')return 'fix';
+  if(type==='unique'&&id.indexOf('ARL-')===0)return 'arl';
+  if(type==='unique')return 'luxsolo';
+  return 'other';
+}
+function _statsEventBusinessType(e){
+  var family=_statsEventFamily(e);
+  if(family==='fix')return 'FIX';
+  if(family==='arl')return 'ARL';
+  if(family==='luxsolo')return 'LUX/SOLO';
+  return 'AUTRE';
+}
+function openStatsTimelineDetails(granularity,key){
+  var box=document.getElementById('statsTimelineDetailsBox');
+  if(!box)return;
+  var g=String(granularity||'');
+  if(g!=='day'&&g!=='week')g='day';
+  var data=((_statsTimelineDetails[g]||{})[String(key||'')])||null;
+  if(!data){
+    box.innerHTML='';
+    return;
+  }
+  var title=g==='week'?'Détail semaine':'Détail jour';
+  var rows=(data.events||[]).slice().sort(function(a,b){return String(b.created_at||'').localeCompare(String(a.created_at||''));});
+  box.innerHTML=''
+    +'<div style="margin-top:10px;background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:10px">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'
+        +'<strong style="font-size:0.8rem;color:#e2e8f0">'+title+' · '+escHtml(data.label||'')+'</strong>'
+        +'<button type="button" onclick="closeStatsTimelineDetails()" style="background:#1e293b;border:1px solid #334155;color:#cbd5e1;border-radius:8px;padding:4px 8px;cursor:pointer;font-size:0.72rem">Fermer</button>'
+      +'</div>'
+      +'<div style="margin-top:8px;font-size:0.74rem;color:#94a3b8">'
+        +'Total: <strong style="color:#f8fafc">'+rows.length+'</strong> · '
+        +'LUX/Solo: <strong style="color:#c4b5fd">'+Number(data.luxsolo||0)+'</strong> · '
+        +'ARL: <strong style="color:#f5d0fe">'+Number(data.arl||0)+'</strong> · '
+        +'FIX: <strong style="color:#93c5fd">'+Number(data.fixed||0)+'</strong> · '
+        +'Joueurs: <strong style="color:#f8fafc">'+Number(data.players||0)+'</strong>'
+      +'</div>'
+      +'<div style="margin-top:8px;max-height:240px;overflow:auto;border:1px solid #1f2937;border-radius:8px">'
+        +'<table style="width:100%;border-collapse:collapse">'
+          +'<thead><tr style="background:#111827"><th style="text-align:left;padding:7px 9px;font-size:0.7rem;color:#94a3b8">Heure</th><th style="text-align:left;padding:7px 9px;font-size:0.7rem;color:#94a3b8">Joueur</th><th style="text-align:left;padding:7px 9px;font-size:0.7rem;color:#94a3b8">Code</th><th style="text-align:left;padding:7px 9px;font-size:0.7rem;color:#94a3b8">Type</th></tr></thead>'
+          +'<tbody>'
+          +(rows.length?rows.map(function(e){
+            var ts='—';
+            try{ts=new Date(String(e.created_at||'')).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});}catch(_e){ts='—';}
+            var t=_statsEventBusinessType(e);
+            var color=t==='FIX'?'#93c5fd':(t==='ARL'?'#f5d0fe':'#c4b5fd');
+            return '<tr><td style="padding:7px 9px;border-top:1px solid #1f2937;font-size:0.72rem;color:#cbd5e1;font-family:var(--mono)">'+escHtml(ts)+'</td><td style="padding:7px 9px;border-top:1px solid #1f2937;font-size:0.72rem;color:#f1f5f9">'+escHtml(String(e.pseudo||'—'))+'</td><td style="padding:7px 9px;border-top:1px solid #1f2937;font-size:0.72rem;color:#e2e8f0;font-family:var(--mono)">'+escHtml(String(e.treasure_id||'—'))+'</td><td style="padding:7px 9px;border-top:1px solid #1f2937;font-size:0.72rem;color:'+color+'">'+t+'</td></tr>';
+          }).join(''):'<tr><td colspan="4" style="padding:8px 9px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">Aucun événement.</td></tr>')
+          +'</tbody>'
+        +'</table>'
+      +'</div>'
+    +'</div>';
+}
+function closeStatsTimelineDetails(){
+  var box=document.getElementById('statsTimelineDetailsBox');
+  if(box)box.innerHTML='';
+}
 function _statsWindow(){
   var now=new Date();
   if(_statsFilterPeriod==='today'){
@@ -1505,6 +1615,8 @@ function onStatsFilterChange(){
   _statsFilterPeriod=p?String(p.value||'all'):'all';
   _statsFilterFrom=f?String(f.value||''):'';
   _statsFilterTo=t?String(t.value||''):'';
+  var familySel=document.getElementById('statsTimelineFamilyFilter');
+  _statsTimelineFamilyFilter=familySel?String(familySel.value||'all'):'all';
   loadStats();
 }
 function openStatsFoundDetails(kind){
@@ -1533,10 +1645,10 @@ function openStatsFoundDetails(kind){
     });
   }
   var titleMap={
-    fixed:'Balises fixes trouvées',
-    unique_validated:'Trésors uniques validés (events)',
-    unique_observed:'Trésors uniques observés (scan/landing/état)',
-    unique_gap:'Trésors observés non validés'
+    fixed:'Balises FIX trouvées',
+    unique_validated:'Flash validés (events)',
+    unique_observed:'Flash observés (scan/landing/état)',
+    unique_gap:'Flash observés non validés'
   };
   var title=titleMap[kind]||'Détail';
   if(!ids.length){
@@ -1692,6 +1804,38 @@ async function loadStats(){
     }
     return true;
   });
+
+  var timelineBuckets={day:{},week:{}};
+  var timelineEvents=filteredEvents.filter(function(e){
+    var fam=_statsEventFamily(e);
+    if(fam==='other')return false;
+    if(_statsTimelineFamilyFilter==='all')return true;
+    return fam===_statsTimelineFamilyFilter;
+  });
+  timelineEvents.forEach(function(e){
+    var type=String(e.treasure_type||'').toLowerCase();
+    var dayKey=_statsDayKey(e.created_at);
+    var weekKey=_statsWeekStartKey(e.created_at);
+    var family=_statsEventFamily(e);
+    var isArl=family==='arl';
+    var isLuxSolo=family==='luxsolo';
+    var pseudo=String(e.pseudo||'').trim();
+    function addBucket(store,key,label){
+      if(!key)return;
+      if(!store[key])store[key]={key:key,label:label,total:0,luxsolo:0,arl:0,fixed:0,playersMap:{},events:[]};
+      store[key].total+=1;
+      if(isLuxSolo)store[key].luxsolo+=1;
+      if(isArl)store[key].arl+=1;
+      if(type==='fixed')store[key].fixed+=1;
+      if(pseudo)store[key].playersMap[pseudo]=1;
+      store[key].events.push({created_at:e.created_at,pseudo:e.pseudo,treasure_id:e.treasure_id,treasure_type:e.treasure_type});
+    }
+    addBucket(timelineBuckets.day,dayKey,_statsFmtDayLabel(dayKey));
+    addBucket(timelineBuckets.week,weekKey,_statsFmtWeekLabel(weekKey));
+  });
+  Object.keys(timelineBuckets.day).forEach(function(k){timelineBuckets.day[k].players=Object.keys(timelineBuckets.day[k].playersMap||{}).length;});
+  Object.keys(timelineBuckets.week).forEach(function(k){timelineBuckets.week[k].players=Object.keys(timelineBuckets.week[k].playersMap||{}).length;});
+  _statsTimelineDetails=timelineBuckets;
 
   var flashEvents=filteredEvents.filter(function(e){return e.treasure_type==='unique'&&e.duration_sec!==null&&e.duration_sec!==undefined;});
   var avgFlashSec=flashEvents.length?Math.round(flashEvents.reduce(function(sum,e){return sum+(Number(e.duration_sec)||0);},0)/flashEvents.length):null;
@@ -1899,6 +2043,27 @@ async function loadStats(){
     if(b==='__none__')return -1;
     return a.localeCompare(b,'fr',{sensitivity:'base'});
   });
+  var weeklyRows=Object.keys(timelineBuckets.week).sort(function(a,b){return b.localeCompare(a);});
+  var dailyRows=Object.keys(timelineBuckets.day).sort(function(a,b){return b.localeCompare(a);});
+  function buildTimelineRows(granularity,keys){
+    if(!keys.length){
+      return '<tr><td colspan="7" style="padding:8px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">Aucune donnée sur cette période.</td></tr>';
+    }
+    return keys.map(function(k){
+      var row=((timelineBuckets[granularity]||{})[k])||null;
+      if(!row)return '';
+      return '<tr style="cursor:pointer" onclick="openStatsTimelineDetails(\''+granularity+'\',\''+escHtml(k)+'\')">'
+        +'<td style="padding:8px 10px;border-top:1px solid #1f2937;font-size:0.74rem;color:#e2e8f0">'+escHtml(row.label||k)+'</td>'
+        +'<td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.74rem;color:#c4b5fd">'+Number(row.luxsolo||0)+'</td>'
+        +'<td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.74rem;color:#f5d0fe">'+Number(row.arl||0)+'</td>'
+        +'<td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.74rem;color:#93c5fd">'+Number(row.fixed||0)+'</td>'
+        +'<td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.74rem;color:#e2e8f0">'+Number(row.total||0)+'</td>'
+        +'<td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.74rem;color:#cbd5e1">'+Number(row.players||0)+'</td>'
+        +'<td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:#93c5fd;text-decoration:underline">détails</td>'
+      +'</tr>';
+    }).join('');
+  }
+
   var summaryTable=''
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin:0 0 10px">'
       +'<label style="font-size:0.72rem;color:#94a3b8">Quête<br><select id="statsQuestFilter" onchange="onStatsFilterChange()" style="margin-top:4px;min-width:180px;padding:7px 9px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:0.78rem"><option value="">Toutes les quêtes</option>'
@@ -1913,15 +2078,40 @@ async function loadStats(){
       +'</select></label>'
       +'<label style="font-size:0.72rem;color:#94a3b8;'+(_statsFilterPeriod==='custom'?'':'display:none')+'">Du<br><input type="date" id="statsDateFrom" value="'+escHtml(_statsFilterFrom)+'" onchange="onStatsFilterChange()" style="margin-top:4px;padding:7px 9px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:0.78rem"></label>'
       +'<label style="font-size:0.72rem;color:#94a3b8;'+(_statsFilterPeriod==='custom'?'':'display:none')+'">Au<br><input type="date" id="statsDateTo" value="'+escHtml(_statsFilterTo)+'" onchange="onStatsFilterChange()" style="margin-top:4px;padding:7px 9px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:0.78rem"></label>'
+      +'<label style="font-size:0.72rem;color:#94a3b8">Famille métier (tableau)<br><select id="statsTimelineFamilyFilter" onchange="onStatsFilterChange()" style="margin-top:4px;min-width:190px;padding:7px 9px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:0.78rem">'
+      +'<option value="all"'+(_statsTimelineFamilyFilter==='all'?' selected':'')+'>Tout</option>'
+      +'<option value="luxsolo"'+(_statsTimelineFamilyFilter==='luxsolo'?' selected':'')+'>Seulement LUX/Solo</option>'
+      +'<option value="arl"'+(_statsTimelineFamilyFilter==='arl'?' selected':'')+'>Seulement ARL</option>'
+      +'<option value="fix"'+(_statsTimelineFamilyFilter==='fix'?' selected':'')+'>Seulement FIX</option>'
+      +'</select></label>'
     +'</div>'
+    +'<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden;margin-bottom:10px">'
+      +'<div style="padding:8px 10px;background:#111827;font-size:0.74rem;color:#cbd5e1;font-weight:700">Tableau métier semaine (clic = détail)</div>'
+      +'<table style="width:100%;border-collapse:collapse">'
+      +'<thead><tr style="background:#111827"><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Semaine</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">LUX/Solo</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">ARL</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">FIX</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Total</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Joueurs</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Action</th></tr></thead>'
+      +'<tbody>'
+      +buildTimelineRows('week',weeklyRows)
+      +'</tbody></table>'
+    +'</div>'
+    +'<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden;margin-bottom:10px">'
+      +'<div style="padding:8px 10px;background:#111827;font-size:0.74rem;color:#cbd5e1;font-weight:700">Tableau métier jour par jour (clic = détail)</div>'
+      +'<div style="max-height:260px;overflow:auto">'
+      +'<table style="width:100%;border-collapse:collapse">'
+      +'<thead><tr style="position:sticky;top:0;background:#111827"><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Jour</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">LUX/Solo</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">ARL</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">FIX</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Total</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Joueurs</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Action</th></tr></thead>'
+      +'<tbody>'
+      +buildTimelineRows('day',dailyRows)
+      +'</tbody></table>'
+      +'</div>'
+    +'</div>'
+    +'<div id="statsTimelineDetailsBox"></div>'
     +'<table style="width:100%;border-collapse:collapse;background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden">'
     +'<thead><tr style="background:#111827"><th style="text-align:left;padding:8px 10px;font-size:0.72rem;color:#94a3b8">Indicateur</th><th style="text-align:right;padding:8px 10px;font-size:0.72rem;color:#94a3b8">Valeur</th></tr></thead>'
     +'<tbody>'
-    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Balises fixes trouvées (events + état)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right"><button type="button" onclick="openStatsFoundDetails(\'fixed\')" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;text-decoration:underline;font:inherit">'+foundFixed+' / '+totalFixed+'</button></td></tr>'
-    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Uniques validés gameplay (events)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right"><button type="button" onclick="openStatsFoundDetails(\'unique_validated\')" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;text-decoration:underline;font:inherit">'+foundUniqueValidated+' / '+totalUnique+'</button></td></tr>'
-    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Uniques observés (scan + landing + état)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right"><button type="button" onclick="openStatsFoundDetails(\'unique_observed\')" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;text-decoration:underline;font:inherit">'+foundUniqueObserved+' / '+totalUnique+'</button></td></tr>'
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Balises FIX trouvées (events + état)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right"><button type="button" onclick="openStatsFoundDetails(\'fixed\')" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;text-decoration:underline;font:inherit">'+foundFixed+' / '+totalFixed+'</button></td></tr>'
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Flash validés gameplay (events)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right"><button type="button" onclick="openStatsFoundDetails(\'unique_validated\')" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;text-decoration:underline;font:inherit">'+foundUniqueValidated+' / '+totalUnique+'</button></td></tr>'
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Flash observés (scan + landing + état)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right"><button type="button" onclick="openStatsFoundDetails(\'unique_observed\')" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;text-decoration:underline;font:inherit">'+foundUniqueObserved+' / '+totalUnique+'</button></td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Observés non validés (à vérifier)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right"><button type="button" onclick="openStatsFoundDetails(\'unique_gap\')" style="background:transparent;border:none;color:'+(uniqueGapCount?'#fbbf24':'#93c5fd')+';cursor:pointer;text-decoration:underline;font:inherit">'+uniqueGapCount+'</button></td></tr>'
-    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Uniques vus en scans bruts</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+foundUniqueFromScans+'</td></tr>'
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Flash vus en scans bruts</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+foundUniqueFromScans+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">'+playersLabel+'</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+playersCount+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Nouveaux joueurs (inscription)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+newPlayersCount+'</td></tr>'
     +(landing.available
