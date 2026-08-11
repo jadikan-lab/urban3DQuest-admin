@@ -2109,6 +2109,52 @@ async function loadStats(){
     }).join('');
   }
 
+  var fixedStatsTable='';
+  if(filteredTreasures.length){
+    var fixedByIdScanCount={};
+    var fixedByIdLastDate={};
+    filteredTreasures.forEach(function(t){
+      if(t.type!=='fixed')return;
+      var id=String(t.id||'').trim();
+      if(!id)return;
+      fixedByIdScanCount[id]=0;
+      fixedByIdLastDate[id]='—';
+    });
+    filteredEvents.forEach(function(e){
+      if(e.treasure_type!=='fixed')return;
+      var tid=String(e.treasure_id||'').trim();
+      if(!tid||!(tid in fixedByIdScanCount))return;
+      fixedByIdScanCount[tid]+=1;
+      var evAt=String(e.created_at||'');
+      if(evAt&&(!fixedByIdLastDate[tid]||fixedByIdLastDate[tid]==='—'||evAt>fixedByIdLastDate[tid])){
+        try{
+          var d=new Date(evAt);
+          fixedByIdLastDate[tid]=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+        }catch(_e){
+          fixedByIdLastDate[tid]=evAt;
+        }
+      }
+    });
+    var fixedRows=filteredTreasures.filter(function(t){return t.type==='fixed';}).map(function(t){
+      var tid=String(t.id||'').trim();
+      var found=!!(String(t.found_by||'').trim()||t.found_at);
+      var scanCount=fixedByIdScanCount[tid]||0;
+      var lastDate=fixedByIdLastDate[tid]||'—';
+      var label=String(t.label||tid).substring(0,40);
+      return '<tr><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#e2e8f0">'+escHtml(label)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;font-family:var(--mono);color:#94a3b8">'+escHtml(tid)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:'+(found?'#4ade80':'#ef4444')+'">'+scanCount+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">'+escHtml(lastDate)+'</td></tr>';
+    }).join('');
+    fixedStatsTable='<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden;margin-bottom:10px"><div style="padding:8px 10px;background:#111827;font-size:0.74rem;color:#cbd5e1;font-weight:700">Balises fixes — Scans par balise</div><div style="max-height:280px;overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr style="position:sticky;top:0;background:#111827"><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Libellé</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">ID</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Dernier scan</th></tr></thead><tbody>'+fixedRows+'</tbody></table></div></div>';
+  }
+
+  var foundNotFoundTable='';
+  if(filteredTreasures.length){
+    var found=filteredTreasures.filter(function(t){return !!(String(t.found_by||'').trim()||t.found_at);});
+    var notFound=filteredTreasures.filter(function(t){return !(String(t.found_by||'').trim()||t.found_at);});
+    var foundHtml=found.map(function(t){return '<div style="padding:4px 8px;background:#111827;border:1px solid #1f2937;border-radius:6px;font-size:0.72rem"><span style="color:#4ade80">✓</span> '+escHtml(String(t.label||t.id).substring(0,30))+' <span style="color:#94a3b8">('+escHtml(String(t.id||''))+')</span> · '+escHtml(String(t.found_by||'—'))+'</div>';}).join('');
+    var notFoundHtml=notFound.map(function(t){return '<div style="padding:4px 8px;background:#111827;border:1px solid #1f2937;border-radius:6px;font-size:0.72rem"><span style="color:#ef4444">✗</span> '+escHtml(String(t.label||t.id).substring(0,30))+' <span style="color:#94a3b8">('+escHtml(String(t.id||''))+')</span></div>';}).join('');
+    foundNotFoundTable='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px"><div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden"><div style="padding:8px 10px;background:#111827;font-size:0.74rem;color:#4ade80;font-weight:700">Trésors trouvés ✓ ('+found.length+')</div><div style="max-height:280px;overflow:auto;padding:8px 10px;display:flex;flex-direction:column;gap:6px">'+foundHtml+'</div></div><div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden"><div style="padding:8px 10px;background:#111827;font-size:0.74rem;color:#ef4444;font-weight:700">Non trouvés ✗ ('+notFound.length+')</div><div style="max-height:280px;overflow:auto;padding:8px 10px;display:flex;flex-direction:column;gap:6px">'+notFoundHtml+'</div></div></div>';
+  }
+
   var summaryTable=''
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin:0 0 10px">'
       +'<label style="font-size:0.72rem;color:#94a3b8">Quête<br><select id="statsQuestFilter" onchange="onStatsFilterChange()" style="margin-top:4px;min-width:180px;padding:7px 9px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-size:0.78rem"><option value="">Toutes les quêtes</option>'
@@ -2214,6 +2260,8 @@ async function loadStats(){
 
   document.getElementById('statsDiv').innerHTML=''
     +summaryTable
+    +fixedStatsTable
+    +foundNotFoundTable
     +'<div id="statsFoundDetailsBox"></div>'
     +entriesTable
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'
