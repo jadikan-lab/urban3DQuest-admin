@@ -2111,49 +2111,60 @@ async function loadStats(){
 
   var fixedStatsTable='';
   if(filteredTreasures.length){
+    function normalizeId(id){
+      var s=String(id||'').trim().toLowerCase();
+      s=s.replace(/^fix[_-]?/,'');
+      s=s.replace(/^solo[_-]?/,'');
+      s=s.replace(/^qr[_-]?/,'');
+      s=s.replace(/^flash[_-]?/,'');
+      s=s.replace(/[_\-\s]/g,'');
+      s=s.replace(/^0+/,'');
+      return s||'0';
+    }
     var fixedByIdScanCount={};
     var fixedByIdLastDate={};
-    var fixedIds={};
+    var fixedNormalized={};
     filteredTreasures.forEach(function(t){
       if(t.type!=='fixed')return;
       var id=String(t.id||'').trim();
       if(!id)return;
+      var norm=normalizeId(id);
       fixedByIdScanCount[id]=0;
       fixedByIdLastDate[id]='—';
-      fixedIds[id.toUpperCase()]=id;
+      fixedNormalized[norm]=id;
     });
     filteredEvents.forEach(function(e){
       if(e.treasure_type!=='fixed')return;
       var tid=String(e.treasure_id||'').trim();
       if(!tid)return;
-      var tidUpper=tid.toUpperCase();
-      var normalizedId=fixedIds[tidUpper]||tid;
-      if(!(normalizedId in fixedByIdScanCount))return;
-      fixedByIdScanCount[normalizedId]+=1;
+      var norm=normalizeId(tid);
+      var realId=fixedNormalized[norm];
+      if(!realId)return;
+      fixedByIdScanCount[realId]+=1;
       var evAt=String(e.created_at||'');
-      if(evAt&&(!fixedByIdLastDate[normalizedId]||fixedByIdLastDate[normalizedId]==='—'||evAt>fixedByIdLastDate[normalizedId])){
+      if(evAt&&(!fixedByIdLastDate[realId]||fixedByIdLastDate[realId]==='—'||evAt>fixedByIdLastDate[realId])){
         try{
           var d=new Date(evAt);
-          fixedByIdLastDate[normalizedId]=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+          fixedByIdLastDate[realId]=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
         }catch(_e){
-          fixedByIdLastDate[normalizedId]=evAt;
+          fixedByIdLastDate[realId]=evAt;
         }
       }
     });
     filteredScans.forEach(function(s){
       var tid=String(s.treasure_id||'').trim();
       if(!tid)return;
-      var tidUpper=tid.toUpperCase();
-      var normalizedId=fixedIds[tidUpper];
-      if(!normalizedId)return;
-      fixedByIdScanCount[normalizedId]+=1;
+      var norm=normalizeId(tid);
+      var realId=fixedNormalized[norm];
+      if(!realId)return;
+      fixedByIdScanCount[realId]+=1;
       var scAt=String(s.created_at||'');
-      if(scAt&&(!fixedByIdLastDate[normalizedId]||fixedByIdLastDate[normalizedId]==='—'||scAt>fixedByIdLastDate[normalizedId])){
+      if(scAt&&(!fixedByIdLastDate[realId]||fixedByIdLastDate[realId]==='—'||scAt>fixedByIdLastDate[realId])){
         try{
           var d=new Date(scAt);
-          fixedByIdLastDate[normalizedId]=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+          fixedByIdLastDate[realId]=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
         }catch(_e){
-          fixedByIdLastDate[normalizedId]=scAt;
+          fixedByIdLastDate[realId]=scAt;
         }
       }
     });
