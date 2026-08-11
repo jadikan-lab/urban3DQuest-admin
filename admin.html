@@ -2113,40 +2113,47 @@ async function loadStats(){
   if(filteredTreasures.length){
     var fixedByIdScanCount={};
     var fixedByIdLastDate={};
+    var fixedIds={};
     filteredTreasures.forEach(function(t){
       if(t.type!=='fixed')return;
       var id=String(t.id||'').trim();
       if(!id)return;
       fixedByIdScanCount[id]=0;
       fixedByIdLastDate[id]='—';
+      fixedIds[id.toUpperCase()]=id;
     });
     filteredEvents.forEach(function(e){
       if(e.treasure_type!=='fixed')return;
       var tid=String(e.treasure_id||'').trim();
-      if(!tid||!(tid in fixedByIdScanCount))return;
-      fixedByIdScanCount[tid]+=1;
+      if(!tid)return;
+      var tidUpper=tid.toUpperCase();
+      var normalizedId=fixedIds[tidUpper]||tid;
+      if(!(normalizedId in fixedByIdScanCount))return;
+      fixedByIdScanCount[normalizedId]+=1;
       var evAt=String(e.created_at||'');
-      if(evAt&&(!fixedByIdLastDate[tid]||fixedByIdLastDate[tid]==='—'||evAt>fixedByIdLastDate[tid])){
+      if(evAt&&(!fixedByIdLastDate[normalizedId]||fixedByIdLastDate[normalizedId]==='—'||evAt>fixedByIdLastDate[normalizedId])){
         try{
           var d=new Date(evAt);
-          fixedByIdLastDate[tid]=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+          fixedByIdLastDate[normalizedId]=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
         }catch(_e){
-          fixedByIdLastDate[tid]=evAt;
+          fixedByIdLastDate[normalizedId]=evAt;
         }
       }
     });
     filteredScans.forEach(function(s){
-      if(s.treasure_type!=='fixed')return;
       var tid=String(s.treasure_id||'').trim();
-      if(!tid||!(tid in fixedByIdScanCount))return;
-      fixedByIdScanCount[tid]+=1;
+      if(!tid)return;
+      var tidUpper=tid.toUpperCase();
+      var normalizedId=fixedIds[tidUpper];
+      if(!normalizedId)return;
+      fixedByIdScanCount[normalizedId]+=1;
       var scAt=String(s.created_at||'');
-      if(scAt&&(!fixedByIdLastDate[tid]||fixedByIdLastDate[tid]==='—'||scAt>fixedByIdLastDate[tid])){
+      if(scAt&&(!fixedByIdLastDate[normalizedId]||fixedByIdLastDate[normalizedId]==='—'||scAt>fixedByIdLastDate[normalizedId])){
         try{
           var d=new Date(scAt);
-          fixedByIdLastDate[tid]=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+          fixedByIdLastDate[normalizedId]=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
         }catch(_e){
-          fixedByIdLastDate[tid]=scAt;
+          fixedByIdLastDate[normalizedId]=scAt;
         }
       }
     });
