@@ -2135,6 +2135,21 @@ async function loadStats(){
         }
       }
     });
+    filteredScans.forEach(function(s){
+      if(s.treasure_type!=='fixed')return;
+      var tid=String(s.treasure_id||'').trim();
+      if(!tid||!(tid in fixedByIdScanCount))return;
+      fixedByIdScanCount[tid]+=1;
+      var scAt=String(s.created_at||'');
+      if(scAt&&(!fixedByIdLastDate[tid]||fixedByIdLastDate[tid]==='—'||scAt>fixedByIdLastDate[tid])){
+        try{
+          var d=new Date(scAt);
+          fixedByIdLastDate[tid]=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+        }catch(_e){
+          fixedByIdLastDate[tid]=scAt;
+        }
+      }
+    });
     var fixedRows=filteredTreasures.filter(function(t){return t.type==='fixed';}).map(function(t){
       var tid=String(t.id||'').trim();
       var found=!!(String(t.found_by||'').trim()||t.found_at);
@@ -2143,7 +2158,7 @@ async function loadStats(){
       var label=String(t.label||tid).substring(0,40);
       return '<tr><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#e2e8f0">'+escHtml(label)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;font-family:var(--mono);color:#94a3b8">'+escHtml(tid)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:'+(found?'#4ade80':'#ef4444')+'">'+scanCount+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">'+escHtml(lastDate)+'</td></tr>';
     }).join('');
-    fixedStatsTable='<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden;margin-bottom:10px"><div style="padding:8px 10px;background:#111827;font-size:0.74rem;color:#cbd5e1;font-weight:700">Balises fixes — Scans par balise</div><div style="max-height:280px;overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr style="position:sticky;top:0;background:#111827"><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Libellé</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">ID</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Dernier scan</th></tr></thead><tbody>'+fixedRows+'</tbody></table></div></div>';
+    fixedStatsTable='<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden;margin-bottom:10px"><div style="padding:8px 10px;background:#111827;font-size:0.74rem;color:#cbd5e1;font-weight:700">Balises fixes — Scans par balise (tous scans)</div><div style="max-height:280px;overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr style="position:sticky;top:0;background:#111827"><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Libellé</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">ID</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Dernier scan</th></tr></thead><tbody>'+fixedRows+'</tbody></table></div></div>';
   }
 
   var foundNotFoundTable='';
