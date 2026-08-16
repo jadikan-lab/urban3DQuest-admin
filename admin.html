@@ -1476,6 +1476,30 @@ var _statsTimelineFamilyFilter='all';
 var _statsFoundDetails={fixed:[],unique_validated:[],unique_observed:[],unique_gap:[]};
 var _statsFoundMeta={unique_gap:{}};
 var _statsTimelineDetails={day:{},week:{}};
+function _ensureStatsReadableStyles(){
+  if(document.getElementById('statsReadableStyles'))return;
+  var style=document.createElement('style');
+  style.id='statsReadableStyles';
+  style.textContent=''
+    +'#statsDiv .stats-v2{display:flex;flex-direction:column;gap:10px}'
+    +'#statsDiv .stats-v2-card{background:#0b1220;border:1px solid #1f2937;border-radius:12px;padding:10px}'
+    +'#statsDiv .stats-v2-intro{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between;background:linear-gradient(90deg,#0b2238,#0f172a);border:1px solid #1e3a5f;border-radius:12px;padding:10px 12px}'
+    +'#statsDiv .stats-v2-title{font-size:0.86rem;font-weight:800;color:#e2e8f0;letter-spacing:.01em}'
+    +'#statsDiv .stats-v2-sub{font-size:0.72rem;color:#93c5fd}'
+    +'#statsDiv .stats-v2-meta{display:flex;gap:6px;flex-wrap:wrap}'
+    +'#statsDiv .stats-v2-pill{font-size:0.68rem;color:#bfdbfe;background:#0f172a;border:1px solid #1e3a5f;border-radius:999px;padding:3px 8px}'
+    +'#statsDiv .stats-v2 table{font-variant-numeric:tabular-nums}'
+    +'#statsDiv .stats-v2 th,#statsDiv .stats-v2 td{line-height:1.35}'
+    +'#statsDiv .stats-v2 tbody tr:nth-child(even) td{background:rgba(15,23,42,.34)}'
+    +'#statsDiv .stats-v2 [style*="font-size:0.72rem"],#statsDiv .stats-v2 [style*="font-size:0.74rem"]{font-size:0.76rem !important}'
+    +'#statsDiv .stats-v2 [style*="max-height:320px;overflow:auto"]{max-height:420px !important}'
+    +'@media (max-width:920px){'
+      +'#statsDiv .stats-v2-intro{align-items:flex-start}'
+      +'#statsDiv .stats-v2 [style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr !important}'
+      +'#statsDiv .stats-v2 [style*="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))"]{grid-template-columns:repeat(auto-fit,minmax(140px,1fr)) !important}'
+    +'}';
+  document.head.appendChild(style);
+}
 function _statsDayKey(createdAt){
   try{
     var d=new Date(String(createdAt||''));
@@ -2021,6 +2045,7 @@ function renderLandingEntriesTable(){
   }).join('');
 }
 async function loadStats(){
+  _ensureStatsReadableStyles();
   var statsDiv=document.getElementById('statsDiv');
   if(statsDiv)statsDiv.innerHTML='<p style="color:#94a3b8;text-align:center;padding:18px 0">Chargement des statistiques…</p>';
   var reqs=await Promise.all([
@@ -2665,21 +2690,37 @@ async function loadStats(){
       :'<tr><td colspan="2" style="padding:8px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">Résumé landing indisponible.</td></tr>')
     +'</tbody></table></div>';
 
+  var readabilityIntro=''
+    +'<div class="stats-v2-intro">'
+      +'<div>'
+        +'<div class="stats-v2-title">Statistiques terrain lisibles</div>'
+        +'<div class="stats-v2-sub">Vue opérationnelle: KPI, qualité data, focus FIX et logs d\'activité.</div>'
+      +'</div>'
+      +'<div class="stats-v2-meta">'
+        +'<span class="stats-v2-pill">Mise à jour: '+escHtml(statsUpdatedAt)+'</span>'
+        +'<span class="stats-v2-pill">Source FIX: events + scan_attempts</span>'
+        +'<span class="stats-v2-pill">Lecture: chiffres alignés en tabulaire</span>'
+      +'</div>'
+    +'</div>';
+
   document.getElementById('statsDiv').innerHTML=''
-    +summaryTable
-    +fixedFocusPanel
-    +fixedStatsTable
-    +foundNotFoundTable
-    +dataQualityPanel
-    +unknownAuditPanel
-    +'<div id="statsFoundDetailsBox"></div>'
-    +statsGlossaryPanel
-    +entriesTable
-    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'
-    +'<button class="btn" style="background:#1e293b;border:1px solid #334155;font-size:0.82rem;padding:10px" onclick="exportCSV()">⬇ Exporter events.csv (inclut duree_sec)</button>'
-    +'<button class="btn" style="background:#0f172a;border:1px solid #334155;font-size:0.82rem;padding:10px" onclick="exportLandingCSV()">⬇ Exporter landing.csv (filtres courants)</button>'
-    +'<button class="btn" style="background:#0b1220;border:1px solid #334155;font-size:0.82rem;padding:10px" onclick="exportLandingCSVAll()">⬇ Exporter landing.csv (tous logs source)</button>'
-    +'<button class="btn" style="background:#111827;border:1px solid #334155;font-size:0.82rem;padding:10px" onclick="exportScanAttemptsCSVAll()">⬇ Exporter scan_attempts.csv (tous logs)</button>'
+    +'<div class="stats-v2">'
+      +readabilityIntro
+      +'<div class="stats-v2-card">'+summaryTable+'</div>'
+      +fixedFocusPanel
+      +fixedStatsTable
+      +foundNotFoundTable
+      +dataQualityPanel
+      +unknownAuditPanel
+      +'<div id="statsFoundDetailsBox"></div>'
+      +statsGlossaryPanel
+      +entriesTable
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'
+      +'<button class="btn" style="background:#1e293b;border:1px solid #334155;font-size:0.82rem;padding:10px" onclick="exportCSV()">⬇ Exporter events.csv (inclut duree_sec)</button>'
+      +'<button class="btn" style="background:#0f172a;border:1px solid #334155;font-size:0.82rem;padding:10px" onclick="exportLandingCSV()">⬇ Exporter landing.csv (filtres courants)</button>'
+      +'<button class="btn" style="background:#0b1220;border:1px solid #334155;font-size:0.82rem;padding:10px" onclick="exportLandingCSVAll()">⬇ Exporter landing.csv (tous logs source)</button>'
+      +'<button class="btn" style="background:#111827;border:1px solid #334155;font-size:0.82rem;padding:10px" onclick="exportScanAttemptsCSVAll()">⬇ Exporter scan_attempts.csv (tous logs)</button>'
+      +'</div>'
     +'</div>';
   renderLandingEntriesTable();
 }
