@@ -2378,10 +2378,31 @@ async function loadStats(){
       +'</div>'
       +'<div style="margin-top:8px;font-size:0.7rem;color:#64748b">Lecture: le funnel montre où le volume chute réellement entre exposition, scan et validation.</div>'
     +'</div>';
+
+  // FIX table uses all-time logs (quest-filtered only) for operational consistency.
+  var fixedEventsForTable=events.filter(function(e){
+    var tid=String((e&&e.treasure_id)||'').trim();
+    if(!tid)return false;
+    var tt=_statsResolveTreasureById(tid,treasureById,treasureByIdUpper,fixedNormMap);
+    var isFixed=(String((e&&e.treasure_type)||'').toLowerCase()==='fixed')||(tt&&String(tt.type||'').toLowerCase()==='fixed');
+    if(!isFixed)return false;
+    if(!_statsFilterQuest)return true;
+    if(!tt)return false;
+    return String(tt.quest||'').trim()===_statsFilterQuest;
+  });
+  var fixedScansForTable=scans.filter(function(s){
+    var tid=String((s&&s.treasure_id)||'').trim();
+    if(!tid)return false;
+    var tt=_statsResolveTreasureById(tid,treasureById,treasureByIdUpper,fixedNormMap);
+    if(!tt||String(tt.type||'').toLowerCase()!=='fixed')return false;
+    if(!_statsFilterQuest)return true;
+    return String(tt.quest||'').trim()===_statsFilterQuest;
+  });
+
   var fixedFocusPanel='';
   var fixedStatsTable='';
   if(filteredTreasures.length){
-    var fixedScanStats=_statsComputeFixedScanStats(filteredTreasures,filteredEvents,filteredScans);
+    var fixedScanStats=_statsComputeFixedScanStats(filteredTreasures,fixedEventsForTable,fixedScansForTable);
     var fixedByIdScanCount=fixedScanStats.scanCountById||{};
     var fixedByIdDayCount=fixedScanStats.dayCountById||{};
     var fixedByIdWeekCount=fixedScanStats.weekCountById||{};
@@ -2459,7 +2480,7 @@ async function loadStats(){
       var label=r.label;
       return '<tr><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#e2e8f0">'+escHtml(label)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;font-family:var(--mono);color:#94a3b8">'+escHtml(tid)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:'+(found?'#4ade80':'#ef4444')+'">'+scanCount+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:#93c5fd">'+scanWeek+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:#60a5fa">'+scanDay+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">'+escHtml(lastDate)+'</td></tr>';
     }).join('');
-    fixedStatsTable='<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden;margin-bottom:10px"><div style="padding:8px 10px;background:#111827;font-size:0.74rem;color:#cbd5e1;font-weight:700">Balises fixes — Analyse par balise (filtres courants)</div><div style="max-height:320px;overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr style="position:sticky;top:0;background:#111827"><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Libellé</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">ID</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans total</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans semaine</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans jour</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Dernier scan</th></tr></thead><tbody>'+fixedRows+'</tbody></table></div></div>';
+    fixedStatsTable='<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden;margin-bottom:10px"><div style="padding:8px 10px;background:#111827;font-size:0.74rem;color:#cbd5e1;font-weight:700">Balises fixes — Analyse par balise (temps réel opérationnel)</div><div style="padding:6px 10px;font-size:0.7rem;color:#93c5fd;background:#0b1220;border-bottom:1px solid #1e293b">Source: events + scan_attempts, toutes périodes (filtre quête appliqué)</div><div style="max-height:320px;overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr style="position:sticky;top:0;background:#111827"><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Libellé</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">ID</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans total</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans semaine</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans jour</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Dernier scan</th></tr></thead><tbody>'+fixedRows+'</tbody></table></div></div>';
   }
 
   var foundNotFoundTable='';
