@@ -1733,6 +1733,23 @@ function _statsToPct(part,total){
   if(!t||t<0)return '—';
   return Math.round((p/t)*100)+'%';
 }
+function _statsPctNum(part,total){
+  var p=Number(part||0);
+  var t=Number(total||0);
+  if(!t||t<0)return null;
+  return (p/t)*100;
+}
+function _statsFmtPctNum(v){
+  if(v===null||v===undefined||!isFinite(v))return '—';
+  return Math.round(v)+'%';
+}
+function _statsFmtDelta(curr,prev){
+  var c=Number(curr||0);
+  var p=Number(prev||0);
+  var d=c-p;
+  var sign=d>0?'+':'';
+  return sign+d;
+}
 function _statsBuildQuestValues(treasures){
   var out=[];
   var seen={};
@@ -2244,6 +2261,48 @@ async function loadStats(){
   _statsTimelineDetails=timelineBuckets;
   var weeklyRows=Object.keys(timelineBuckets.week).sort(function(a,b){return b.localeCompare(a);});
   var dailyRows=Object.keys(timelineBuckets.day).sort(function(a,b){return b.localeCompare(a);});
+  var fixedCoveragePct=_statsPctNum(foundFixed,totalFixed);
+  var uniqueValidationPct=_statsPctNum(foundUniqueValidated,foundUniqueObserved);
+  var scanSuccessPct=_statsPctNum(rawScansSuccess,rawScansWithCode);
+  var landingQrPct=_statsPctNum(landingWithFound,landingTotal);
+  var thisWeekKey=weeklyRows[0]||'';
+  var prevWeekKey=weeklyRows[1]||'';
+  var thisWeek=((timelineBuckets.week||{})[thisWeekKey])||null;
+  var prevWeek=((timelineBuckets.week||{})[prevWeekKey])||null;
+  var thisWeekTotal=Number((thisWeek&&thisWeek.total)||0);
+  var prevWeekTotal=Number((prevWeek&&prevWeek.total)||0);
+  var wowDelta=_statsFmtDelta(thisWeekTotal,prevWeekTotal);
+  var wowPct=prevWeekTotal>0?Math.round(((thisWeekTotal-prevWeekTotal)/prevWeekTotal)*100):null;
+  var wowColor=wowDelta>0?'#4ade80':(wowDelta<0?'#f59e0b':'#94a3b8');
+  var qualityIssues=eventsMissingTreasureId+eventsUnknownTreasure+scansMissingTreasureId+scansUnknownTreasure+landingUnknownCode;
+  var qualityColor=qualityIssues===0?'#4ade80':(qualityIssues<10?'#f59e0b':'#f87171');
+  var funnelMax=Math.max(landingTotal,rawScansWithCode,rawScansSuccess,foundUniqueObserved,foundUniqueValidated,1);
+  function funnelBar(v){
+    var n=Number(v||0);
+    var pct=Math.max(3,Math.round((n/funnelMax)*100));
+    return '<div style="height:7px;border-radius:999px;background:#172554;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,#38bdf8,#34d399)"></div></div>';
+  }
+
+  var executivePanel=''
+    +'<div style="margin:0 0 10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px">'
+      +'<div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:10px"><div style="font-size:0.68rem;color:#94a3b8">Couverture FIX</div><div style="font-size:1.05rem;color:#e2e8f0;font-weight:800">'+_statsFmtPctNum(fixedCoveragePct)+'</div><div style="font-size:0.72rem;color:#64748b">'+foundFixed+' / '+totalFixed+'</div></div>'
+      +'<div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:10px"><div style="font-size:0.68rem;color:#94a3b8">Validation Flash</div><div style="font-size:1.05rem;color:#e2e8f0;font-weight:800">'+_statsFmtPctNum(uniqueValidationPct)+'</div><div style="font-size:0.72rem;color:#64748b">'+foundUniqueValidated+' validés / '+foundUniqueObserved+' observés</div></div>'
+      +'<div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:10px"><div style="font-size:0.68rem;color:#94a3b8">Scans validés</div><div style="font-size:1.05rem;color:#e2e8f0;font-weight:800">'+_statsFmtPctNum(scanSuccessPct)+'</div><div style="font-size:0.72rem;color:#64748b">'+rawScansSuccess+' / '+rawScansWithCode+'</div></div>'
+      +'<div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:10px"><div style="font-size:0.68rem;color:#94a3b8">Landing avec QR</div><div style="font-size:1.05rem;color:#e2e8f0;font-weight:800">'+_statsFmtPctNum(landingQrPct)+'</div><div style="font-size:0.72rem;color:#64748b">'+landingWithFound+' / '+landingTotal+'</div></div>'
+      +'<div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:10px"><div style="font-size:0.68rem;color:#94a3b8">Tendance semaine</div><div style="font-size:1.05rem;color:'+wowColor+';font-weight:800">'+wowDelta+(wowPct===null?'':' ('+(wowPct>0?'+':'')+wowPct+'%)')+'</div><div style="font-size:0.72rem;color:#64748b">'+thisWeekTotal+' vs '+prevWeekTotal+' logs</div></div>'
+      +'<div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:10px"><div style="font-size:0.68rem;color:#94a3b8">Alertes qualité data</div><div style="font-size:1.05rem;color:'+qualityColor+';font-weight:800">'+qualityIssues+'</div><div style="font-size:0.72rem;color:#64748b">incohérences détectées</div></div>'
+    +'</div>'
+    +'<div style="margin:0 0 10px;background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:10px">'
+      +'<div style="font-size:0.76rem;color:#cbd5e1;font-weight:700;margin-bottom:8px">Funnel réel (filtres courants)</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 88px;gap:8px 10px;align-items:center;font-size:0.72rem;color:#cbd5e1">'
+        +'<div>Landing total'+funnelBar(landingTotal)+'</div><div style="text-align:right;color:#e2e8f0">'+landingTotal+'</div>'
+        +'<div>Scans avec code'+funnelBar(rawScansWithCode)+'</div><div style="text-align:right;color:#e2e8f0">'+rawScansWithCode+'</div>'
+        +'<div>Scans validés'+funnelBar(rawScansSuccess)+'</div><div style="text-align:right;color:#e2e8f0">'+rawScansSuccess+'</div>'
+        +'<div>Uniques observés'+funnelBar(foundUniqueObserved)+'</div><div style="text-align:right;color:#e2e8f0">'+foundUniqueObserved+'</div>'
+        +'<div>Uniques validés'+funnelBar(foundUniqueValidated)+'</div><div style="text-align:right;color:#e2e8f0">'+foundUniqueValidated+'</div>'
+      +'</div>'
+      +'<div style="margin-top:8px;font-size:0.7rem;color:#64748b">Lecture: le funnel montre où le volume chute réellement entre exposition, scan et validation.</div>'
+    +'</div>';
   var fixedStatsTable='';
   if(filteredTreasures.length){
     var fixedScanStats=_statsComputeFixedScanStats(filteredTreasures,filteredEvents,filteredScans);
@@ -2291,6 +2350,7 @@ async function loadStats(){
       +'</select></label>'
     +'</div>'
     +'<div style="margin:0 0 10px;padding:8px 10px;background:#0b1220;border:1px solid #1f2937;border-radius:10px;font-size:0.72rem;color:#94a3b8">Source timeline: <strong style="color:#e2e8f0">'+escHtml(timelineSourceLabel)+'</strong> · MAJ: <strong style="color:#e2e8f0">'+escHtml(statsUpdatedAt)+'</strong></div>'
+    +executivePanel
     +'<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden;margin-bottom:10px">'
       +'<div style="padding:8px 10px;background:#111827;font-size:0.74rem;color:#cbd5e1;font-weight:700">Tableau métier semaine (clic = détail)</div>'
       +'<table style="width:100%;border-collapse:collapse">'
