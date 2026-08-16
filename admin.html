@@ -1891,6 +1891,7 @@ function _statsComputeFixedScanStats(filteredTreasures,filteredEvents,filteredSc
   var fixedByIdLastDate={};
   var fixedByIdDayCount={};
   var fixedByIdWeekCount={};
+  var fixedByIdRawIds={};
   var fixedNormalized={};
   var now=new Date();
   var todayKey=_statsDayKey(now.toISOString());
@@ -1904,6 +1905,7 @@ function _statsComputeFixedScanStats(filteredTreasures,filteredEvents,filteredSc
     fixedByIdLastDate[id]='—';
     fixedByIdDayCount[id]=0;
     fixedByIdWeekCount[id]=0;
+    fixedByIdRawIds[id]={};
     fixedNormalized[norm]=id;
   });
   function register(tid,createdAt){
@@ -1913,6 +1915,7 @@ function _statsComputeFixedScanStats(filteredTreasures,filteredEvents,filteredSc
     var realId=fixedNormalized[norm];
     if(!realId)return;
     fixedByIdScanCount[realId]+=1;
+    fixedByIdRawIds[realId][idRaw.toUpperCase()]=1;
     var at=String(createdAt||'');
     if(!at)return;
     var dayKey=_statsDayKey(at);
@@ -1939,7 +1942,8 @@ function _statsComputeFixedScanStats(filteredTreasures,filteredEvents,filteredSc
     scanCountById:fixedByIdScanCount,
     dayCountById:fixedByIdDayCount,
     weekCountById:fixedByIdWeekCount,
-    lastDateById:fixedByIdLastDate
+    lastDateById:fixedByIdLastDate,
+    rawIdsById:fixedByIdRawIds
   };
 }
 function _statsPickLatestByCreatedAt(rows){
@@ -2407,8 +2411,10 @@ async function loadStats(){
     var fixedByIdDayCount=fixedScanStats.dayCountById||{};
     var fixedByIdWeekCount=fixedScanStats.weekCountById||{};
     var fixedByIdLastDate=fixedScanStats.lastDateById||{};
+    var fixedByIdRawIds=fixedScanStats.rawIdsById||{};
     var fixedRowsRaw=filteredTreasures.filter(function(t){return t.type==='fixed';}).map(function(t){
       var tid=String(t.id||'').trim();
+      var rawIdList=Object.keys(fixedByIdRawIds[tid]||{}).sort(function(a,b){return a.localeCompare(b,'fr',{sensitivity:'base'});});
       return {
         id:tid,
         label:String(t.label||tid).substring(0,40),
@@ -2416,7 +2422,8 @@ async function loadStats(){
         scans:Number(fixedByIdScanCount[tid]||0),
         scansDay:Number(fixedByIdDayCount[tid]||0),
         scansWeek:Number(fixedByIdWeekCount[tid]||0),
-        lastDate:fixedByIdLastDate[tid]||'—'
+        lastDate:fixedByIdLastDate[tid]||'—',
+        rawIds:rawIdList
       };
     });
     var fixedTotalCount=fixedRowsRaw.length;
@@ -2478,9 +2485,10 @@ async function loadStats(){
       var scanWeek=r.scansWeek;
       var lastDate=r.lastDate;
       var label=r.label;
-      return '<tr><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#e2e8f0">'+escHtml(label)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;font-family:var(--mono);color:#94a3b8">'+escHtml(tid)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:'+(found?'#4ade80':'#ef4444')+'">'+scanCount+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:#93c5fd">'+scanWeek+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:#60a5fa">'+scanDay+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">'+escHtml(lastDate)+'</td></tr>';
+      var rawIdsTxt=r.rawIds.length?r.rawIds.join(', '):'—';
+      return '<tr><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#e2e8f0">'+escHtml(label)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;font-family:var(--mono);color:#94a3b8">'+escHtml(tid)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:'+(found?'#4ade80':'#ef4444')+'">'+scanCount+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:#93c5fd">'+scanWeek+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:#60a5fa">'+scanDay+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">'+escHtml(lastDate)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.7rem;font-family:var(--mono);color:#64748b">'+escHtml(rawIdsTxt)+'</td></tr>';
     }).join('');
-    fixedStatsTable='<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden;margin-bottom:10px"><div style="padding:8px 10px;background:#111827;font-size:0.74rem;color:#cbd5e1;font-weight:700">Balises fixes — Analyse par balise (temps réel opérationnel)</div><div style="padding:6px 10px;font-size:0.7rem;color:#93c5fd;background:#0b1220;border-bottom:1px solid #1e293b">Source: events + scan_attempts, toutes périodes (filtre quête appliqué)</div><div style="max-height:320px;overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr style="position:sticky;top:0;background:#111827"><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Libellé</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">ID</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans total</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans semaine</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans jour</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Dernier scan</th></tr></thead><tbody>'+fixedRows+'</tbody></table></div></div>';
+    fixedStatsTable='<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden;margin-bottom:10px"><div style="padding:8px 10px;background:#111827;font-size:0.74rem;color:#cbd5e1;font-weight:700">Balises fixes — Analyse par balise (temps réel opérationnel)</div><div style="padding:6px 10px;font-size:0.7rem;color:#93c5fd;background:#0b1220;border-bottom:1px solid #1e293b">Source: events + scan_attempts, toutes périodes (filtre quête appliqué). Colonne "IDs bruts vus" = valeurs réellement rencontrées et rattachées à la balise.</div><div style="max-height:320px;overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr style="position:sticky;top:0;background:#111827"><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Libellé</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">ID</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans total</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans semaine</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans jour</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Dernier scan</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">IDs bruts vus</th></tr></thead><tbody>'+fixedRows+'</tbody></table></div></div>';
   }
 
   var foundNotFoundTable='';
