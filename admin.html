@@ -1869,6 +1869,23 @@ function _statsNormalizeTreasureId(id){
   s=s.replace(/^0+/,'');
   return s||'0';
 }
+function _statsBuildFixedNormMap(treasures){
+  var map={};
+  (treasures||[]).forEach(function(t){
+    if(String((t&&t.type)||'').toLowerCase()!=='fixed')return;
+    var id=String((t&&t.id)||'').trim();
+    if(!id)return;
+    map[_statsNormalizeTreasureId(id)]=t;
+  });
+  return map;
+}
+function _statsResolveTreasureById(rawId,treasureById,treasureByIdUpper,fixedNormMap){
+  var id=String(rawId||'').trim();
+  if(!id)return null;
+  var direct=treasureById[id]||treasureByIdUpper[id.toUpperCase()]||null;
+  if(direct)return direct;
+  return fixedNormMap[_statsNormalizeTreasureId(id)]||null;
+}
 function _statsComputeFixedScanStats(filteredTreasures,filteredEvents,filteredScans){
   var fixedByIdScanCount={};
   var fixedByIdLastDate={};
@@ -2028,19 +2045,32 @@ async function loadStats(){
   var treasureIndexes=_statsBuildTreasureIndexes(t);
   var treasureById=treasureIndexes.byId;
   var treasureByIdUpper=treasureIndexes.byIdUpper;
+  var fixedNormMap=_statsBuildFixedNormMap(t);
   _statsTreasureTypeByIdUpper=treasureIndexes.typeByIdUpper;
   var filteredTreasures=t.filter(function(x){
     if(_statsFilterQuest&&String(x.quest||'').trim()!==_statsFilterQuest)return false;
     return true;
   });
   var filteredTreasureIds={};
-  filteredTreasures.forEach(function(x){filteredTreasureIds[String(x.id||'')]=1;});
+  var filteredTreasureIdsUpper={};
+  var filteredFixedNormIds={};
+  filteredTreasures.forEach(function(x){
+    var id=String(x.id||'').trim();
+    if(!id)return;
+    filteredTreasureIds[id]=1;
+    filteredTreasureIdsUpper[id.toUpperCase()]=1;
+    if(String(x.type||'').toLowerCase()==='fixed')filteredFixedNormIds[_statsNormalizeTreasureId(id)]=1;
+  });
 
   var filteredEvents=events.filter(function(e){
     if(!_inStatsWindow(e.created_at,window))return false;
     if(_statsFilterQuest){
-      var tid=String(e.treasure_id||'');
-      if(!filteredTreasureIds[tid])return false;
+      var tid=String(e.treasure_id||'').trim();
+      if(!tid)return false;
+      var tidUp=tid.toUpperCase();
+      if(filteredTreasureIds[tid]||filteredTreasureIdsUpper[tidUp])return true;
+      if(String(e.treasure_type||'').toLowerCase()==='fixed'&&filteredFixedNormIds[_statsNormalizeTreasureId(tid)])return true;
+      return false;
     }
     return true;
   });
@@ -2048,7 +2078,7 @@ async function loadStats(){
   var eventsUnknownTreasure=filteredEvents.filter(function(e){
     var tid=String(e.treasure_id||'').trim();
     if(!tid)return false;
-    return !(treasureById[tid]||treasureByIdUpper[tid.toUpperCase()]);
+    return !_statsResolveTreasureById(tid,treasureById,treasureByIdUpper,fixedNormMap);
   }).length;
 
   var timelineBuckets={day:{},week:{}};
@@ -2068,8 +2098,15 @@ async function loadStats(){
   filteredEvents.forEach(function(e){
     var tid=String(e.treasure_id||'').trim();
     if(!tid)return;
-    if(e.treasure_type==='fixed')foundFixedIdsFromEvents[tid.toUpperCase()]=tid;
-    if(e.treasure_type==='unique')foundUniqueIds[tid.toUpperCase()]=tid;
+    var tt=_statsResolveTreasureById(tid,treasureById,treasureByIdUpper,fixedNormMap);
+    if(String(e.treasure_type||'').toLowerCase()==='fixed'){
+      var fixedCanonical=String((tt&&tt.id)||tid).trim();
+      if(fixedCanonical)foundFixedIdsFromEvents[fixedCanonical.toUpperCase()]=fixedCanonical;
+    }
+    if(String(e.treasure_type||'').toLowerCase()==='unique'){
+      var uniqCanonical=String((tt&&tt.id)||tid).trim();
+      if(uniqCanonical)foundUniqueIds[uniqCanonical.toUpperCase()]=uniqCanonical;
+    }
   });
   var foundFixedFromState=filteredTreasures.filter(function(x){
     if(x.type!=='fixed')return false;
@@ -2115,7 +2152,7 @@ async function loadStats(){
     if(_statsFilterQuest){
       var tid=String(s.treasure_id||'').trim();
       if(!tid)return false;
-      var tt=treasureById[tid]||treasureByIdUpper[tid.toUpperCase()];
+      var tt=_statsResolveTreasureById(tid,treasureById,treasureByIdUpper,fixedNormMap);
       if(!tt)return false;
       var ttQuest=String(tt.quest||'').trim();
       if(ttQuest===_statsFilterQuest)return true;
@@ -2132,7 +2169,7 @@ async function loadStats(){
   var scansUnknownTreasure=filteredScans.filter(function(s){
     var tid=String(s.treasure_id||'').trim();
     if(!tid)return false;
-    return !(treasureById[tid]||treasureByIdUpper[tid.toUpperCase()]);
+    return !_statsResolveTreasureById(tid,treasureById,treasureByIdUpper,fixedNormMap);
   }).length;
 
   var foundUniqueIdsFromState={};
@@ -2148,11 +2185,12 @@ async function loadStats(){
   filteredScans.forEach(function(s){
     var tid=String(s.treasure_id||'').trim();
     if(!tid)return;
-    var tt=treasureById[tid]||treasureByIdUpper[tid.toUpperCase()];
+    var tt=_statsResolveTreasureById(tid,treasureById,treasureByIdUpper,fixedNormMap);
     if(!tt||tt.type!=='unique')return;
     var st=String(s.status||'').toLowerCase();
     if(!uniqueScanStatuses[st])return;
-    foundUniqueIdsFromScans[tid.toUpperCase()]=tid;
+    var uniqId=String(tt.id||tid).trim();
+    if(uniqId)foundUniqueIdsFromScans[uniqId.toUpperCase()]=uniqId;
   });
   var foundUniqueFromScans=Object.keys(foundUniqueIdsFromScans).length;
 
@@ -2165,8 +2203,7 @@ async function loadStats(){
       if(_statsFilterQuest){
         var found=String(e.found||'').trim();
         if(!found)return false;
-        var foundUpper=found.toUpperCase();
-        var tt=treasureById[found]||treasureByIdUpper[foundUpper];
+        var tt=_statsResolveTreasureById(found,treasureById,treasureByIdUpper,fixedNormMap);
         if(!tt)return false;
         var ttQuest=String(tt.quest||'').trim();
         if(ttQuest===_statsFilterQuest)return true;
@@ -2185,14 +2222,14 @@ async function loadStats(){
   filteredLandingEntries.forEach(function(e){
     var found=String(e.found||'').trim();
     if(!found)return;
-    var foundUpper=found.toUpperCase();
-    var tt=treasureById[found]||treasureByIdUpper[foundUpper];
+    var tt=_statsResolveTreasureById(found,treasureById,treasureByIdUpper,fixedNormMap);
     if(!tt){
       landingUnknownCode+=1;
       return;
     }
     if(tt&&tt.type==='unique'){
-      foundUniqueIdsFromLanding[foundUpper]=found;
+      var uniqId=String(tt.id||found).trim();
+      if(uniqId)foundUniqueIdsFromLanding[uniqId.toUpperCase()]=uniqId;
     }
   });
   var foundUniqueFromLanding=Object.keys(foundUniqueIdsFromLanding).length;
