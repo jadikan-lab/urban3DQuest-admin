@@ -1889,6 +1889,7 @@ function _statsResolveTreasureById(rawId,treasureById,treasureByIdUpper,fixedNor
 function _statsComputeFixedScanStats(filteredTreasures,filteredEvents,filteredScans){
   var fixedByIdScanCount={};
   var fixedByIdLastDate={};
+  var fixedByIdLastTs={};
   var fixedByIdDayCount={};
   var fixedByIdWeekCount={};
   var fixedByIdRawIds={};
@@ -1903,6 +1904,7 @@ function _statsComputeFixedScanStats(filteredTreasures,filteredEvents,filteredSc
     var norm=_statsNormalizeTreasureId(id);
     fixedByIdScanCount[id]=0;
     fixedByIdLastDate[id]='—';
+    fixedByIdLastTs[id]=0;
     fixedByIdDayCount[id]=0;
     fixedByIdWeekCount[id]=0;
     fixedByIdRawIds[id]={};
@@ -1922,13 +1924,11 @@ function _statsComputeFixedScanStats(filteredTreasures,filteredEvents,filteredSc
     if(dayKey&&todayKey&&dayKey===todayKey)fixedByIdDayCount[realId]+=1;
     var weekKey=_statsWeekStartKey(at);
     if(weekKey&&thisWeekKey&&weekKey===thisWeekKey)fixedByIdWeekCount[realId]+=1;
-    if(!fixedByIdLastDate[realId]||fixedByIdLastDate[realId]==='—'||at>fixedByIdLastDate[realId]){
-      try{
-        var d=new Date(at);
-        fixedByIdLastDate[realId]=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
-      }catch(_e){
-        fixedByIdLastDate[realId]=at;
-      }
+    var d=new Date(at);
+    var ts=d.getTime();
+    if(isFinite(ts)&&ts>Number(fixedByIdLastTs[realId]||0)){
+      fixedByIdLastTs[realId]=ts;
+      fixedByIdLastDate[realId]=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
     }
   }
   (filteredEvents||[]).forEach(function(e){
