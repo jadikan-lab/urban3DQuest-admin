@@ -1724,6 +1724,201 @@ function _fmtLandingDateTime(createdAt){
     return String(createdAt||'—');
   }
 }
+function _statsIsTreasureFound(t){
+  return !!(String((t&&t.found_by)||'').trim()||(t&&t.found_at));
+}
+function _statsToPct(part,total){
+  var p=Number(part||0);
+  var t=Number(total||0);
+  if(!t||t<0)return '—';
+  return Math.round((p/t)*100)+'%';
+}
+function _statsBuildQuestValues(treasures){
+  var out=[];
+  var seen={};
+  (treasures||[]).forEach(function(x){
+    var qn=String((x&&x.quest)||'').trim();
+    if(!qn||seen[qn])return;
+    seen[qn]=1;
+    out.push(qn);
+  });
+  out.sort(function(a,b){return a.localeCompare(b,'fr',{sensitivity:'base'});});
+  return out;
+}
+function _statsBuildTreasureIndexes(treasures){
+  var byId={};
+  var byIdUpper={};
+  var typeByIdUpper={};
+  (treasures||[]).forEach(function(x){
+    var rawId=String((x&&x.id)||'').trim();
+    if(!rawId)return;
+    byId[rawId]=x;
+    var up=rawId.toUpperCase();
+    byIdUpper[up]=x;
+    typeByIdUpper[up]=String((x&&x.type)||'').toLowerCase();
+  });
+  return {byId:byId,byIdUpper:byIdUpper,typeByIdUpper:typeByIdUpper};
+}
+function _statsEnsureTimelineBucket(store,key,label){
+  if(!key)return null;
+  if(!store[key])store[key]={key:key,label:label,total:0,luxsolo:0,arl:0,fixed:0,noCode:0,other:0,playersMap:{},events:[]};
+  return store[key];
+}
+function _statsFinalizeTimelineBuckets(timelineBuckets){
+  Object.keys((timelineBuckets&&timelineBuckets.day)||{}).forEach(function(k){
+    timelineBuckets.day[k].players=Object.keys(timelineBuckets.day[k].playersMap||{}).length;
+  });
+  Object.keys((timelineBuckets&&timelineBuckets.week)||{}).forEach(function(k){
+    timelineBuckets.week[k].players=Object.keys(timelineBuckets.week[k].playersMap||{}).length;
+  });
+  return timelineBuckets;
+}
+function _statsBuildTimelineFromEvents(events,familyFilter){
+  var out={day:{},week:{}};
+  (events||[]).forEach(function(e){
+    var fam=_statsEventFamily(e);
+    if(fam==='other')return;
+    if(familyFilter!=='all'&&fam!==familyFilter)return;
+    var type=String((e&&e.treasure_type)||'').toLowerCase();
+    var dayKey=_statsDayKey(e&&e.created_at);
+    var weekKey=_statsWeekStartKey(e&&e.created_at);
+    var pseudo=String((e&&e.pseudo)||'').trim();
+    var isArl=fam==='arl';
+    var isLuxSolo=fam==='luxsolo';
+    var dayBucket=_statsEnsureTimelineBucket(out.day,dayKey,_statsFmtDayLabel(dayKey));
+    var weekBucket=_statsEnsureTimelineBucket(out.week,weekKey,_statsFmtWeekLabel(weekKey));
+    [dayBucket,weekBucket].forEach(function(bucket){
+      if(!bucket)return;
+      bucket.total+=1;
+      if(isLuxSolo)bucket.luxsolo+=1;
+      if(isArl)bucket.arl+=1;
+      if(type==='fixed')bucket.fixed+=1;
+      if(pseudo)bucket.playersMap[pseudo]=1;
+      bucket.events.push({created_at:e.created_at,pseudo:e.pseudo,treasure_id:e.treasure_id,treasure_type:e.treasure_type});
+    });
+  });
+  return _statsFinalizeTimelineBuckets(out);
+}
+function _statsBuildTimelineFromLanding(entries,familyFilter){
+  var out={day:{},week:{}};
+  (entries||[]).forEach(function(e){
+    var found=String((e&&e.found)||'').trim();
+    var fam=_landingCodeFamily(found);
+    if(familyFilter!=='all'&&fam!==familyFilter)return;
+    var dayKey=_statsDayKey(e&&e.created_at);
+    var weekKey=_statsWeekStartKey(e&&e.created_at);
+    var dayBucket=_statsEnsureTimelineBucket(out.day,dayKey,_statsFmtDayLabel(dayKey));
+    var weekBucket=_statsEnsureTimelineBucket(out.week,weekKey,_statsFmtWeekLabel(weekKey));
+    [dayBucket,weekBucket].forEach(function(bucket){
+      if(!bucket)return;
+      bucket.total+=1;
+      if(fam==='luxsolo')bucket.luxsolo+=1;
+      else if(fam==='arl')bucket.arl+=1;
+      else if(fam==='fix')bucket.fixed+=1;
+      else if(!found)bucket.noCode+=1;
+      else bucket.other+=1;
+      bucket.events.push({
+        created_at:e.created_at,
+        pseudo:'',
+        treasure_id:found||'visite sans code',
+        treasure_type:(fam==='fix'?'FIX':(fam==='arl'?'ARL':(fam==='luxsolo'?'LUX/SOLO':(found?'AUTRE':'SANS CODE'))))
+      });
+    });
+  });
+  return _statsFinalizeTimelineBuckets(out);
+}
+function _statsComputeTopPlayer(events){
+  var topPlayer=null;
+  if(!(events||[]).length)return topPlayer;
+  var agg={};
+  (events||[]).forEach(function(e){
+    var pseudo=String((e&&e.pseudo)||'').trim();
+    if(!pseudo)return;
+    if(!agg[pseudo])agg[pseudo]={pseudo:pseudo,count:0,score:0};
+    agg[pseudo].count+=1;
+    agg[pseudo].score+=(Number((e&&e.duration_sec)||0)||0);
+  });
+  var list=Object.keys(agg).map(function(k){return agg[k];});
+  list.sort(function(a,b){return b.count-a.count||(a.score-b.score);});
+  return list[0]||null;
+}
+function _statsNormalizeTreasureId(id){
+  var s=String(id||'').trim().toLowerCase();
+  s=s.replace(/^fix[_-]?/,'');
+  s=s.replace(/^solo[_-]?/,'');
+  s=s.replace(/^qr[_-]?/,'');
+  s=s.replace(/^flash[_-]?/,'');
+  s=s.replace(/[_\-\s]/g,'');
+  s=s.replace(/^0+/,'');
+  return s||'0';
+}
+function _statsComputeFixedScanStats(filteredTreasures,filteredEvents,filteredScans){
+  var fixedByIdScanCount={};
+  var fixedByIdLastDate={};
+  var fixedNormalized={};
+  (filteredTreasures||[]).forEach(function(t){
+    if((t&&t.type)!=='fixed')return;
+    var id=String((t&&t.id)||'').trim();
+    if(!id)return;
+    var norm=_statsNormalizeTreasureId(id);
+    fixedByIdScanCount[id]=0;
+    fixedByIdLastDate[id]='—';
+    fixedNormalized[norm]=id;
+  });
+  function register(tid,createdAt){
+    var idRaw=String(tid||'').trim();
+    if(!idRaw)return;
+    var norm=_statsNormalizeTreasureId(idRaw);
+    var realId=fixedNormalized[norm];
+    if(!realId)return;
+    fixedByIdScanCount[realId]+=1;
+    var at=String(createdAt||'');
+    if(!at)return;
+    if(!fixedByIdLastDate[realId]||fixedByIdLastDate[realId]==='—'||at>fixedByIdLastDate[realId]){
+      try{
+        var d=new Date(at);
+        fixedByIdLastDate[realId]=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+      }catch(_e){
+        fixedByIdLastDate[realId]=at;
+      }
+    }
+  }
+  (filteredEvents||[]).forEach(function(e){
+    if((e&&e.treasure_type)!=='fixed')return;
+    register(e&&e.treasure_id,e&&e.created_at);
+  });
+  (filteredScans||[]).forEach(function(s){
+    register(s&&s.treasure_id,s&&s.created_at);
+  });
+  return {scanCountById:fixedByIdScanCount,lastDateById:fixedByIdLastDate};
+}
+function _statsPickLatestByCreatedAt(rows){
+  var out=null;
+  (rows||[]).forEach(function(row){
+    var at=String((row&&row.created_at)||'');
+    if(!at)return;
+    if(!out||at>String(out.created_at||''))out=row;
+  });
+  return out;
+}
+function _statsBuildTimelineRows(granularity,keys,timelineBuckets){
+  if(!(keys||[]).length){
+    return '<tr><td colspan="7" style="padding:8px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">Aucune donnée sur cette période.</td></tr>';
+  }
+  return keys.map(function(k){
+    var row=(((timelineBuckets||{})[granularity]||{})[k])||null;
+    if(!row)return '';
+    return '<tr style="cursor:pointer" onclick="openStatsTimelineDetails(\''+granularity+'\',\''+escHtml(k)+'\')">'
+      +'<td style="padding:8px 10px;border-top:1px solid #1f2937;font-size:0.74rem;color:#e2e8f0">'+escHtml(row.label||k)+'</td>'
+      +'<td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.74rem;color:#c4b5fd">'+Number(row.luxsolo||0)+'</td>'
+      +'<td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.74rem;color:#f5d0fe">'+Number(row.arl||0)+'</td>'
+      +'<td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.74rem;color:#93c5fd">'+Number(row.fixed||0)+'</td>'
+      +'<td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.74rem;color:#e2e8f0">'+Number(row.total||0)+'</td>'
+      +'<td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.74rem;color:#cbd5e1">'+Number(row.noCode||0)+'</td>'
+      +'<td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:#93c5fd;text-decoration:underline">détails</td>'
+    +'</tr>';
+  }).join('');
+}
 function renderLandingEntriesTable(){
   var tbody=document.getElementById('landingEntriesTbody');
   if(!tbody)return;
@@ -1772,37 +1967,35 @@ function renderLandingEntriesTable(){
   }).join('');
 }
 async function loadStats(){
-  var r1=await db.from('treasures').select('id,type,found_by,found_at,quest');
-  var r2=await db.from('players').select('pseudo,found_count,score,joined_at');
-  var r3=await db.from('events').select('pseudo,treasure_id,treasure_type,duration_sec,created_at');
-  var r4=await db.from('scan_attempts').select('created_at,treasure_id,status');
+  var statsDiv=document.getElementById('statsDiv');
+  if(statsDiv)statsDiv.innerHTML='<p style="color:#94a3b8;text-align:center;padding:18px 0">Chargement des statistiques…</p>';
+  var reqs=await Promise.all([
+    db.from('treasures').select('id,type,found_by,found_at,quest'),
+    db.from('players').select('pseudo,found_count,score,joined_at'),
+    db.from('events').select('pseudo,treasure_id,treasure_type,duration_sec,created_at'),
+    db.from('scan_attempts').select('created_at,treasure_id,status')
+  ]);
+  var r1=reqs[0];
+  var r2=reqs[1];
+  var r3=reqs[2];
+  var r4=reqs[3];
+  var firstErr=(r1&&r1.error)||(r2&&r2.error)||(r3&&r3.error)||(r4&&r4.error)||null;
+  if(firstErr){
+    if(statsDiv)statsDiv.innerHTML='<p style="color:#f87171;padding:14px 12px;background:#1f1115;border:1px solid #7f1d1d;border-radius:10px">Erreur chargement statistiques: '+escHtml(String(firstErr.message||firstErr))+'</p>';
+    return;
+  }
   var t=r1.data||[];
   var p=r2.data||[];
   var events=r3.data||[];
   var scans=r4.data||[];
 
-  var questValues=[];
-  var qSeen={};
-  t.forEach(function(x){
-    var qn=String(x.quest||'').trim();
-    if(!qn||qSeen[qn])return;
-    qSeen[qn]=1;
-    questValues.push(qn);
-  });
-  questValues.sort(function(a,b){return a.localeCompare(b,'fr',{sensitivity:'base'});});
+  var questValues=_statsBuildQuestValues(t);
 
   var window=_statsWindow();
-  var treasureById={};
-  t.forEach(function(x){treasureById[String(x.id||'')]=x;});
-  var treasureByIdUpper={};
-  _statsTreasureTypeByIdUpper={};
-  t.forEach(function(x){
-    var id=String(x.id||'').trim().toUpperCase();
-    if(id){
-      treasureByIdUpper[id]=x;
-      _statsTreasureTypeByIdUpper[id]=String(x.type||'').toLowerCase();
-    }
-  });
+  var treasureIndexes=_statsBuildTreasureIndexes(t);
+  var treasureById=treasureIndexes.byId;
+  var treasureByIdUpper=treasureIndexes.byIdUpper;
+  _statsTreasureTypeByIdUpper=treasureIndexes.typeByIdUpper;
   var filteredTreasures=t.filter(function(x){
     if(_statsFilterQuest&&String(x.quest||'').trim()!==_statsFilterQuest)return false;
     return true;
@@ -1818,37 +2011,16 @@ async function loadStats(){
     }
     return true;
   });
+  var eventsMissingTreasureId=filteredEvents.filter(function(e){return !String(e.treasure_id||'').trim();}).length;
+  var eventsUnknownTreasure=filteredEvents.filter(function(e){
+    var tid=String(e.treasure_id||'').trim();
+    if(!tid)return false;
+    return !(treasureById[tid]||treasureByIdUpper[tid.toUpperCase()]);
+  }).length;
 
   var timelineBuckets={day:{},week:{}};
-  var timelineEvents=filteredEvents.filter(function(e){
-    var fam=_statsEventFamily(e);
-    if(fam==='other')return false;
-    if(_statsTimelineFamilyFilter==='all')return true;
-    return fam===_statsTimelineFamilyFilter;
-  });
-  timelineEvents.forEach(function(e){
-    var type=String(e.treasure_type||'').toLowerCase();
-    var dayKey=_statsDayKey(e.created_at);
-    var weekKey=_statsWeekStartKey(e.created_at);
-    var family=_statsEventFamily(e);
-    var isArl=family==='arl';
-    var isLuxSolo=family==='luxsolo';
-    var pseudo=String(e.pseudo||'').trim();
-    function addBucket(store,key,label){
-      if(!key)return;
-      if(!store[key])store[key]={key:key,label:label,total:0,luxsolo:0,arl:0,fixed:0,noCode:0,other:0,playersMap:{},events:[]};
-      store[key].total+=1;
-      if(isLuxSolo)store[key].luxsolo+=1;
-      if(isArl)store[key].arl+=1;
-      if(type==='fixed')store[key].fixed+=1;
-      if(pseudo)store[key].playersMap[pseudo]=1;
-      store[key].events.push({created_at:e.created_at,pseudo:e.pseudo,treasure_id:e.treasure_id,treasure_type:e.treasure_type});
-    }
-    addBucket(timelineBuckets.day,dayKey,_statsFmtDayLabel(dayKey));
-    addBucket(timelineBuckets.week,weekKey,_statsFmtWeekLabel(weekKey));
-  });
-  Object.keys(timelineBuckets.day).forEach(function(k){timelineBuckets.day[k].players=Object.keys(timelineBuckets.day[k].playersMap||{}).length;});
-  Object.keys(timelineBuckets.week).forEach(function(k){timelineBuckets.week[k].players=Object.keys(timelineBuckets.week[k].playersMap||{}).length;});
+  var timelineSourceLabel='events gameplay';
+  timelineBuckets=_statsBuildTimelineFromEvents(filteredEvents,_statsTimelineFamilyFilter);
   _statsTimelineDetails=timelineBuckets;
 
   var flashEvents=filteredEvents.filter(function(e){return e.treasure_type==='unique'&&e.duration_sec!==null&&e.duration_sec!==undefined;});
@@ -1868,12 +2040,12 @@ async function loadStats(){
   });
   var foundFixedFromState=filteredTreasures.filter(function(x){
     if(x.type!=='fixed')return false;
-    return !!(String(x.found_by||'').trim()||x.found_at);
+    return _statsIsTreasureFound(x);
   }).length;
   var foundFixedIdsFromState={};
   filteredTreasures.forEach(function(x){
     if(x.type!=='fixed')return;
-    if(!(String(x.found_by||'').trim()||x.found_at))return;
+    if(!_statsIsTreasureFound(x))return;
     var id=String(x.id||'').trim();
     if(id)foundFixedIdsFromState[id.toUpperCase()]=id;
   });
@@ -1903,20 +2075,7 @@ async function loadStats(){
     return true;
   }).length;
 
-  var topPlayer=null;
-  if(filteredEvents.length){
-    var agg={};
-    filteredEvents.forEach(function(e){
-      var pseudo=String(e.pseudo||'').trim();
-      if(!pseudo)return;
-      if(!agg[pseudo])agg[pseudo]={pseudo:pseudo,count:0,score:0};
-      agg[pseudo].count+=1;
-      agg[pseudo].score+=(Number(e.duration_sec)||0);
-    });
-    var list=Object.keys(agg).map(function(k){return agg[k];});
-    list.sort(function(a,b){return b.count-a.count||(a.score-b.score);});
-    topPlayer=list[0]||null;
-  }
+  var topPlayer=_statsComputeTopPlayer(filteredEvents);
 
   var filteredScans=scans.filter(function(s){
     if(!_inStatsWindow(s.created_at,window))return false;
@@ -1936,11 +2095,17 @@ async function loadStats(){
   var rawScansTotal=filteredScans.length;
   var rawScansWithCode=filteredScans.filter(function(s){return String(s.treasure_id||'').trim().length>0;}).length;
   var rawScansSuccess=filteredScans.filter(function(s){return String(s.status||'').toLowerCase()==='success';}).length;
+  var scansMissingTreasureId=filteredScans.filter(function(s){return !String(s.treasure_id||'').trim();}).length;
+  var scansUnknownTreasure=filteredScans.filter(function(s){
+    var tid=String(s.treasure_id||'').trim();
+    if(!tid)return false;
+    return !(treasureById[tid]||treasureByIdUpper[tid.toUpperCase()]);
+  }).length;
 
   var foundUniqueIdsFromState={};
   filteredTreasures.forEach(function(x){
     if(x.type!=='unique')return;
-    if(!(String(x.found_by||'').trim()||x.found_at))return;
+    if(!_statsIsTreasureFound(x))return;
     var id=String(x.id||'').trim();
     if(id)foundUniqueIdsFromState[id.toUpperCase()]=id;
   });
@@ -1960,6 +2125,7 @@ async function loadStats(){
 
   var landing=await loadLandingSummary();
   var filteredLandingEntries=[];
+  var landingUnknownCode=0;
   if(landing.available){
     filteredLandingEntries=(landing.entries||[]).filter(function(e){
       if(!_inStatsWindow(e.created_at,window))return false;
@@ -1979,32 +2145,8 @@ async function loadStats(){
     });
 
     // Timeline must reflect raw landing logs (including repeats and visits without code).
-    timelineBuckets={day:{},week:{}};
-    filteredLandingEntries.forEach(function(e){
-      var found=String(e.found||'').trim();
-      var fam=_landingCodeFamily(found);
-      if(_statsTimelineFamilyFilter!=='all'&&fam!==_statsTimelineFamilyFilter)return;
-      var dayKey=_statsDayKey(e.created_at);
-      var weekKey=_statsWeekStartKey(e.created_at);
-      function addBucket(store,key,label){
-        if(!key)return;
-        if(!store[key])store[key]={key:key,label:label,total:0,luxsolo:0,arl:0,fixed:0,noCode:0,other:0,playersMap:{},events:[]};
-        store[key].total+=1;
-        if(fam==='luxsolo')store[key].luxsolo+=1;
-        else if(fam==='arl')store[key].arl+=1;
-        else if(fam==='fix')store[key].fixed+=1;
-        else if(!found)store[key].noCode+=1;
-        else store[key].other+=1;
-        store[key].events.push({
-          created_at:e.created_at,
-          pseudo:'',
-          treasure_id:found||'visite sans code',
-          treasure_type:(fam==='fix'?'FIX':(fam==='arl'?'ARL':(fam==='luxsolo'?'LUX/SOLO':(found?'AUTRE':'SANS CODE'))))
-        });
-      }
-      addBucket(timelineBuckets.day,dayKey,_statsFmtDayLabel(dayKey));
-      addBucket(timelineBuckets.week,weekKey,_statsFmtWeekLabel(weekKey));
-    });
+    timelineSourceLabel='landing-hit (logs bruts)';
+    timelineBuckets=_statsBuildTimelineFromLanding(filteredLandingEntries,_statsTimelineFamilyFilter);
   }
   var foundUniqueIdsFromLanding={};
   filteredLandingEntries.forEach(function(e){
@@ -2012,6 +2154,10 @@ async function loadStats(){
     if(!found)return;
     var foundUpper=found.toUpperCase();
     var tt=treasureById[found]||treasureByIdUpper[foundUpper];
+    if(!tt){
+      landingUnknownCode+=1;
+      return;
+    }
     if(tt&&tt.type==='unique'){
       foundUniqueIdsFromLanding[foundUpper]=found;
     }
@@ -2027,6 +2173,7 @@ async function loadStats(){
   });
   var foundUniqueValidated=Object.keys(foundUniqueValidatedSet).length;
   var foundUniqueObserved=Object.keys(foundUniqueObservedSet).length;
+  var foundUniqueValidationRate=_statsToPct(foundUniqueValidated,foundUniqueObserved);
   var uniqueGapSet={};
   Object.keys(foundUniqueObservedSet).forEach(function(k){if(!foundUniqueValidatedSet[k])uniqueGapSet[k]=foundUniqueObservedSet[k];});
   var uniqueGapCount=Object.keys(uniqueGapSet).length;
@@ -2055,7 +2202,7 @@ async function loadStats(){
   _statsFoundMeta={unique_gap:uniqueGapMeta};
   var landingTotal=filteredLandingEntries.length;
   var landingWithFound=filteredLandingEntries.filter(function(e){return String(e.found||'').trim().length>0;}).length;
-  var landingLast=filteredLandingEntries.slice().sort(function(a,b){return String(b.created_at||'').localeCompare(String(a.created_at||''));})[0]||null;
+  var landingLast=_statsPickLatestByCreatedAt(filteredLandingEntries);
   var lastLanding='—';
   if(landing.available&&landingLast){
     try{
@@ -2085,92 +2232,26 @@ async function loadStats(){
     if(b==='__none__')return -1;
     return a.localeCompare(b,'fr',{sensitivity:'base'});
   });
-  Object.keys(timelineBuckets.day).forEach(function(k){timelineBuckets.day[k].players=Object.keys(timelineBuckets.day[k].playersMap||{}).length;});
-  Object.keys(timelineBuckets.week).forEach(function(k){timelineBuckets.week[k].players=Object.keys(timelineBuckets.week[k].playersMap||{}).length;});
+  var fixedCoverageRate=_statsToPct(foundFixed,totalFixed);
+  var landingWithFoundRate=_statsToPct(landingWithFound,landingTotal);
+  var rawScanSuccessRate=_statsToPct(rawScansSuccess,rawScansWithCode);
+  var knownEventsCount=Math.max(0,filteredEvents.length-eventsMissingTreasureId-eventsUnknownTreasure);
+  var knownScansCount=Math.max(0,filteredScans.length-scansMissingTreasureId-scansUnknownTreasure);
+  var eventsKnownRate=_statsToPct(knownEventsCount,filteredEvents.length);
+  var scansKnownRate=_statsToPct(knownScansCount,filteredScans.length);
+  var statsUpdatedAt=(new Date()).toLocaleDateString('fr-FR')+' '+(new Date()).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  timelineBuckets=_statsFinalizeTimelineBuckets(timelineBuckets);
   _statsTimelineDetails=timelineBuckets;
   var weeklyRows=Object.keys(timelineBuckets.week).sort(function(a,b){return b.localeCompare(a);});
   var dailyRows=Object.keys(timelineBuckets.day).sort(function(a,b){return b.localeCompare(a);});
-  function buildTimelineRows(granularity,keys){
-    if(!keys.length){
-      return '<tr><td colspan="7" style="padding:8px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">Aucune donnée sur cette période.</td></tr>';
-    }
-    return keys.map(function(k){
-      var row=((timelineBuckets[granularity]||{})[k])||null;
-      if(!row)return '';
-      return '<tr style="cursor:pointer" onclick="openStatsTimelineDetails(\''+granularity+'\',\''+escHtml(k)+'\')">'
-        +'<td style="padding:8px 10px;border-top:1px solid #1f2937;font-size:0.74rem;color:#e2e8f0">'+escHtml(row.label||k)+'</td>'
-        +'<td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.74rem;color:#c4b5fd">'+Number(row.luxsolo||0)+'</td>'
-        +'<td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.74rem;color:#f5d0fe">'+Number(row.arl||0)+'</td>'
-        +'<td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.74rem;color:#93c5fd">'+Number(row.fixed||0)+'</td>'
-        +'<td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.74rem;color:#e2e8f0">'+Number(row.total||0)+'</td>'
-        +'<td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.74rem;color:#cbd5e1">'+Number(row.noCode||0)+'</td>'
-        +'<td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:#93c5fd;text-decoration:underline">détails</td>'
-      +'</tr>';
-    }).join('');
-  }
-
   var fixedStatsTable='';
   if(filteredTreasures.length){
-    function normalizeId(id){
-      var s=String(id||'').trim().toLowerCase();
-      s=s.replace(/^fix[_-]?/,'');
-      s=s.replace(/^solo[_-]?/,'');
-      s=s.replace(/^qr[_-]?/,'');
-      s=s.replace(/^flash[_-]?/,'');
-      s=s.replace(/[_\-\s]/g,'');
-      s=s.replace(/^0+/,'');
-      return s||'0';
-    }
-    var fixedByIdScanCount={};
-    var fixedByIdLastDate={};
-    var fixedNormalized={};
-    filteredTreasures.forEach(function(t){
-      if(t.type!=='fixed')return;
-      var id=String(t.id||'').trim();
-      if(!id)return;
-      var norm=normalizeId(id);
-      fixedByIdScanCount[id]=0;
-      fixedByIdLastDate[id]='—';
-      fixedNormalized[norm]=id;
-    });
-    filteredEvents.forEach(function(e){
-      if(e.treasure_type!=='fixed')return;
-      var tid=String(e.treasure_id||'').trim();
-      if(!tid)return;
-      var norm=normalizeId(tid);
-      var realId=fixedNormalized[norm];
-      if(!realId)return;
-      fixedByIdScanCount[realId]+=1;
-      var evAt=String(e.created_at||'');
-      if(evAt&&(!fixedByIdLastDate[realId]||fixedByIdLastDate[realId]==='—'||evAt>fixedByIdLastDate[realId])){
-        try{
-          var d=new Date(evAt);
-          fixedByIdLastDate[realId]=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
-        }catch(_e){
-          fixedByIdLastDate[realId]=evAt;
-        }
-      }
-    });
-    filteredScans.forEach(function(s){
-      var tid=String(s.treasure_id||'').trim();
-      if(!tid)return;
-      var norm=normalizeId(tid);
-      var realId=fixedNormalized[norm];
-      if(!realId)return;
-      fixedByIdScanCount[realId]+=1;
-      var scAt=String(s.created_at||'');
-      if(scAt&&(!fixedByIdLastDate[realId]||fixedByIdLastDate[realId]==='—'||scAt>fixedByIdLastDate[realId])){
-        try{
-          var d=new Date(scAt);
-          fixedByIdLastDate[realId]=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
-        }catch(_e){
-          fixedByIdLastDate[realId]=scAt;
-        }
-      }
-    });
+    var fixedScanStats=_statsComputeFixedScanStats(filteredTreasures,filteredEvents,filteredScans);
+    var fixedByIdScanCount=fixedScanStats.scanCountById||{};
+    var fixedByIdLastDate=fixedScanStats.lastDateById||{};
     var fixedRows=filteredTreasures.filter(function(t){return t.type==='fixed';}).map(function(t){
       var tid=String(t.id||'').trim();
-      var found=!!(String(t.found_by||'').trim()||t.found_at);
+      var found=_statsIsTreasureFound(t);
       var scanCount=fixedByIdScanCount[tid]||0;
       var lastDate=fixedByIdLastDate[tid]||'—';
       var label=String(t.label||tid).substring(0,40);
@@ -2209,12 +2290,13 @@ async function loadStats(){
       +'<option value="fix"'+(_statsTimelineFamilyFilter==='fix'?' selected':'')+'>Seulement FIX</option>'
       +'</select></label>'
     +'</div>'
+    +'<div style="margin:0 0 10px;padding:8px 10px;background:#0b1220;border:1px solid #1f2937;border-radius:10px;font-size:0.72rem;color:#94a3b8">Source timeline: <strong style="color:#e2e8f0">'+escHtml(timelineSourceLabel)+'</strong> · MAJ: <strong style="color:#e2e8f0">'+escHtml(statsUpdatedAt)+'</strong></div>'
     +'<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden;margin-bottom:10px">'
       +'<div style="padding:8px 10px;background:#111827;font-size:0.74rem;color:#cbd5e1;font-weight:700">Tableau métier semaine (clic = détail)</div>'
       +'<table style="width:100%;border-collapse:collapse">'
       +'<thead><tr style="background:#111827"><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Semaine</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">LUX/Solo</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">ARL</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">FIX</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Total logs</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Sans code</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Action</th></tr></thead>'
       +'<tbody>'
-      +buildTimelineRows('week',weeklyRows)
+      +_statsBuildTimelineRows('week',weeklyRows,timelineBuckets)
       +'</tbody></table>'
     +'</div>'
     +'<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden;margin-bottom:10px">'
@@ -2223,7 +2305,7 @@ async function loadStats(){
       +'<table style="width:100%;border-collapse:collapse">'
       +'<thead><tr style="position:sticky;top:0;background:#111827"><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Jour</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">LUX/Solo</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">ARL</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">FIX</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Total logs</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Sans code</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Action</th></tr></thead>'
       +'<tbody>'
-      +buildTimelineRows('day',dailyRows)
+      +_statsBuildTimelineRows('day',dailyRows,timelineBuckets)
       +'</tbody></table>'
       +'</div>'
     +'</div>'
@@ -2232,8 +2314,10 @@ async function loadStats(){
     +'<thead><tr style="background:#111827"><th style="text-align:left;padding:8px 10px;font-size:0.72rem;color:#94a3b8">Indicateur</th><th style="text-align:right;padding:8px 10px;font-size:0.72rem;color:#94a3b8">Valeur</th></tr></thead>'
     +'<tbody>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Balises FIX trouvées (events + état)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right"><button type="button" onclick="openStatsFoundDetails(\'fixed\')" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;text-decoration:underline;font:inherit">'+foundFixed+' / '+totalFixed+'</button></td></tr>'
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Taux couverture FIX (trouvées / total FIX)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+fixedCoverageRate+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Flash validés gameplay (events)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right"><button type="button" onclick="openStatsFoundDetails(\'unique_validated\')" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;text-decoration:underline;font:inherit">'+foundUniqueValidated+' / '+totalUnique+'</button></td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Flash observés (scan + landing + état)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right"><button type="button" onclick="openStatsFoundDetails(\'unique_observed\')" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;text-decoration:underline;font:inherit">'+foundUniqueObserved+' / '+totalUnique+'</button></td></tr>'
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Taux validation Flash (validés / observés)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+foundUniqueValidationRate+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Observés non validés (à vérifier)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right"><button type="button" onclick="openStatsFoundDetails(\'unique_gap\')" style="background:transparent;border:none;color:'+(uniqueGapCount?'#fbbf24':'#93c5fd')+';cursor:pointer;text-decoration:underline;font:inherit">'+uniqueGapCount+'</button></td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Flash vus en scans bruts</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+foundUniqueFromScans+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">'+playersLabel+'</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+playersCount+'</td></tr>'
@@ -2241,6 +2325,7 @@ async function loadStats(){
     +(landing.available
       ?'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Arrivées landing</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+landingTotal+'</td></tr>'
       +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Arrivées avec QR</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+landingWithFound+'</td></tr>'
+      +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Taux landing avec QR</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+landingWithFoundRate+'</td></tr>'
       +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Uniques distincts vus sur landing</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+foundUniqueFromLanding+'</td></tr>'
       +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Dernier hit landing</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.75rem">'+escHtml(lastLanding)+'</td></tr>'
       :'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Landing</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right;color:#fbbf24">indisponible</td></tr>'
@@ -2248,10 +2333,41 @@ async function loadStats(){
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Scans bruts (total)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+rawScansTotal+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Scans bruts avec code</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+rawScansWithCode+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Scans bruts validés (success)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+rawScansSuccess+'</td></tr>'
+    +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Taux scan validé (success / scans avec code)</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+rawScanSuccessRate+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Temps flash moyen</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+fmtFlash(avgFlashSec)+'</td></tr>'
     +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Meilleur temps flash</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+fmtFlash(bestFlashSec)+'</td></tr>'
     +(topPlayer?'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Meilleur joueur</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+topPlayer.pseudo+' ('+topPlayer.count+')</td></tr>':'')
     +'</tbody></table>';
+
+  var dataQualityPanel=''
+    +'<div style="margin:10px 0;background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden">'
+      +'<div style="padding:8px 10px;background:#111827;font-size:0.74rem;color:#cbd5e1;font-weight:700">Qualité des données (filtres courants)</div>'
+      +'<table style="width:100%;border-collapse:collapse">'
+        +'<thead><tr style="background:#111827"><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Contrôle</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Valeur</th></tr></thead>'
+        +'<tbody>'
+          +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Events rattachés à un trésor connu</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+eventsKnownRate+' ('+knownEventsCount+'/'+filteredEvents.length+')</td></tr>'
+          +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Events sans treasure_id</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+eventsMissingTreasureId+'</td></tr>'
+          +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Events avec treasure_id inconnu</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+eventsUnknownTreasure+'</td></tr>'
+          +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Scans rattachés à un trésor connu</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+scansKnownRate+' ('+knownScansCount+'/'+filteredScans.length+')</td></tr>'
+          +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Scans sans treasure_id</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+scansMissingTreasureId+'</td></tr>'
+          +'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Scans avec treasure_id inconnu</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+scansUnknownTreasure+'</td></tr>'
+          +(landing.available
+            ?'<tr><td style="padding:8px 10px;border-top:1px solid #1f2937">Landing avec code inconnu</td><td style="padding:8px 10px;border-top:1px solid #1f2937;text-align:right">'+landingUnknownCode+'</td></tr>'
+            :'')
+        +'</tbody>'
+      +'</table>'
+    +'</div>';
+
+  var statsGlossaryPanel=''
+    +'<div style="margin:10px 0;background:#0b1220;border:1px solid #1f2937;border-radius:10px;padding:10px">'
+      +'<div style="font-size:0.74rem;color:#cbd5e1;font-weight:700;margin-bottom:6px">Glossaire KPI</div>'
+      +'<div style="font-size:0.72rem;color:#94a3b8;line-height:1.55">'
+        +'<strong style="color:#e2e8f0">Validés</strong> = uniques présents dans <code>events</code>. '
+        +'<strong style="color:#e2e8f0">Observés</strong> = union état trésors + scans + landing. '
+        +'<strong style="color:#e2e8f0">Taux scan validé</strong> = <code>success</code> / scans avec code. '
+        +'<strong style="color:#e2e8f0">Couverture FIX</strong> = balises FIX trouvées / balises FIX totales (selon filtres).
+      </div>'
+    +'</div>';
 
   var entriesTable=''
     +'<div style="margin-top:10px;font-size:0.72rem;color:#94a3b8">Connexions landing (date et heure)</div>'
@@ -2295,7 +2411,9 @@ async function loadStats(){
     +summaryTable
     +fixedStatsTable
     +foundNotFoundTable
+    +dataQualityPanel
     +'<div id="statsFoundDetailsBox"></div>'
+    +statsGlossaryPanel
     +entriesTable
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'
     +'<button class="btn" style="background:#1e293b;border:1px solid #334155;font-size:0.82rem;padding:10px" onclick="exportCSV()">⬇ Exporter events.csv (inclut duree_sec)</button>'
