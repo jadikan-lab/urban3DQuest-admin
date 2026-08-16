@@ -2074,6 +2074,15 @@ async function loadStats(){
     }
     return true;
   });
+  var unknownEventIdMap={};
+  filteredEvents.forEach(function(e){
+    var tid=String((e&&e.treasure_id)||'').trim();
+    if(!tid)return;
+    if(_statsResolveTreasureById(tid,treasureById,treasureByIdUpper,fixedNormMap))return;
+    var key=tid.toUpperCase();
+    if(!unknownEventIdMap[key])unknownEventIdMap[key]={id:tid,count:0};
+    unknownEventIdMap[key].count+=1;
+  });
   var eventsMissingTreasureId=filteredEvents.filter(function(e){return !String(e.treasure_id||'').trim();}).length;
   var eventsUnknownTreasure=filteredEvents.filter(function(e){
     var tid=String(e.treasure_id||'').trim();
@@ -2162,6 +2171,15 @@ async function loadStats(){
     }
     return true;
   });
+  var unknownScanIdMap={};
+  filteredScans.forEach(function(s){
+    var tid=String((s&&s.treasure_id)||'').trim();
+    if(!tid)return;
+    if(_statsResolveTreasureById(tid,treasureById,treasureByIdUpper,fixedNormMap))return;
+    var key=tid.toUpperCase();
+    if(!unknownScanIdMap[key])unknownScanIdMap[key]={id:tid,count:0};
+    unknownScanIdMap[key].count+=1;
+  });
   var rawScansTotal=filteredScans.length;
   var rawScansWithCode=filteredScans.filter(function(s){return String(s.treasure_id||'').trim().length>0;}).length;
   var rawScansSuccess=filteredScans.filter(function(s){return String(s.status||'').toLowerCase()==='success';}).length;
@@ -2219,12 +2237,16 @@ async function loadStats(){
     timelineBuckets=_statsBuildTimelineFromLanding(filteredLandingEntries,_statsTimelineFamilyFilter);
   }
   var foundUniqueIdsFromLanding={};
+  var unknownLandingIdMap={};
   filteredLandingEntries.forEach(function(e){
     var found=String(e.found||'').trim();
     if(!found)return;
     var tt=_statsResolveTreasureById(found,treasureById,treasureByIdUpper,fixedNormMap);
     if(!tt){
       landingUnknownCode+=1;
+      var fKey=found.toUpperCase();
+      if(!unknownLandingIdMap[fKey])unknownLandingIdMap[fKey]={id:found,count:0};
+      unknownLandingIdMap[fKey].count+=1;
       return;
     }
     if(tt&&tt.type==='unique'){
@@ -2539,6 +2561,32 @@ async function loadStats(){
       +'</table>'
     +'</div>';
 
+  function _buildUnknownRows(m){
+    return Object.keys(m||{}).map(function(k){return m[k];}).sort(function(a,b){
+      if((b&&b.count)!==(a&&a.count))return (b&&b.count||0)-(a&&a.count||0);
+      return String((a&&a.id)||'').localeCompare(String((b&&b.id)||''),'fr',{sensitivity:'base'});
+    }).slice(0,20);
+  }
+  var unknownEventsTop=_buildUnknownRows(unknownEventIdMap);
+  var unknownScansTop=_buildUnknownRows(unknownScanIdMap);
+  var unknownLandingTop=_buildUnknownRows(unknownLandingIdMap);
+  function _renderUnknownList(rows,color){
+    if(!rows.length)return '<div style="font-size:0.72rem;color:#64748b">Aucun ID inconnu.</div>';
+    return rows.map(function(r){
+      return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:0.72rem;color:#cbd5e1;padding:3px 0;border-top:1px dashed #1f2937"><span style="font-family:var(--mono);color:'+color+'">'+escHtml(String(r.id||''))+'</span><strong style="color:#e2e8f0">'+Number(r.count||0)+'</strong></div>';
+    }).join('');
+  }
+  var unknownAuditPanel=''
+    +'<div style="margin:10px 0;background:#160f12;border:1px solid #3a1f28;border-radius:10px;overflow:hidden">'
+      +'<div style="padding:8px 10px;background:#24131a;font-size:0.74rem;color:#fecdd3;font-weight:700">Audit IDs inconnus (top 20 par source)</div>'
+      +'<div style="padding:8px 10px;font-size:0.7rem;color:#fda4af">But: identifier rapidement les valeurs à normaliser en base pour fiabiliser définitivement les stats.</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;padding:0 10px 10px">'
+        +'<div style="background:#0f172a;border:1px solid #2b1b22;border-radius:8px;padding:8px"><div style="font-size:0.7rem;color:#fca5a5;font-weight:700;margin-bottom:4px">Events</div>'+_renderUnknownList(unknownEventsTop,'#fca5a5')+'</div>'
+        +'<div style="background:#0f172a;border:1px solid #2b1b22;border-radius:8px;padding:8px"><div style="font-size:0.7rem;color:#fdba74;font-weight:700;margin-bottom:4px">Scan attempts</div>'+_renderUnknownList(unknownScansTop,'#fdba74')+'</div>'
+        +'<div style="background:#0f172a;border:1px solid #2b1b22;border-radius:8px;padding:8px"><div style="font-size:0.7rem;color:#f9a8d4;font-weight:700;margin-bottom:4px">Landing</div>'+_renderUnknownList(unknownLandingTop,'#f9a8d4')+'</div>'
+      +'</div>'
+    +'</div>';
+
   var statsGlossaryPanel=''
     +'<div style="margin:10px 0;background:#0b1220;border:1px solid #1f2937;border-radius:10px;padding:10px">'
       +'<div style="font-size:0.74rem;color:#cbd5e1;font-weight:700;margin-bottom:6px">Glossaire KPI</div>'
@@ -2594,6 +2642,7 @@ async function loadStats(){
     +fixedStatsTable
     +foundNotFoundTable
     +dataQualityPanel
+    +unknownAuditPanel
     +'<div id="statsFoundDetailsBox"></div>'
     +statsGlossaryPanel
     +entriesTable
