@@ -1911,7 +1911,8 @@ function _statsResolveTreasureById(rawId,treasureById,treasureByIdUpper,fixedNor
   return fixedNormMap[_statsNormalizeTreasureId(id)]||null;
 }
 function _statsComputeFixedScanStats(filteredTreasures,filteredEvents,filteredScans){
-  var fixedByIdScanCount={};
+  var fixedByIdValidatedCount={};
+  var fixedByIdAttemptCount={};
   var fixedByIdLastDate={};
   var fixedByIdLastTs={};
   var fixedByIdDayCount={};
@@ -1926,7 +1927,8 @@ function _statsComputeFixedScanStats(filteredTreasures,filteredEvents,filteredSc
     var id=String((t&&t.id)||'').trim();
     if(!id)return;
     var norm=_statsNormalizeTreasureId(id);
-    fixedByIdScanCount[id]=0;
+    fixedByIdValidatedCount[id]=0;
+    fixedByIdAttemptCount[id]=0;
     fixedByIdLastDate[id]='—';
     fixedByIdLastTs[id]=0;
     fixedByIdDayCount[id]=0;
@@ -1934,13 +1936,14 @@ function _statsComputeFixedScanStats(filteredTreasures,filteredEvents,filteredSc
     fixedByIdRawIds[id]={};
     fixedNormalized[norm]=id;
   });
-  function register(tid,createdAt){
+  function register(tid,createdAt,kind){
     var idRaw=String(tid||'').trim();
     if(!idRaw)return;
     var norm=_statsNormalizeTreasureId(idRaw);
     var realId=fixedNormalized[norm];
     if(!realId)return;
-    fixedByIdScanCount[realId]+=1;
+    if(kind==='validated')fixedByIdValidatedCount[realId]+=1;
+    else fixedByIdAttemptCount[realId]+=1;
     fixedByIdRawIds[realId][idRaw.toUpperCase()]=1;
     var at=String(createdAt||'');
     if(!at)return;
@@ -1957,13 +1960,14 @@ function _statsComputeFixedScanStats(filteredTreasures,filteredEvents,filteredSc
   }
   (filteredEvents||[]).forEach(function(e){
     if((e&&e.treasure_type)!=='fixed')return;
-    register(e&&e.treasure_id,e&&e.created_at);
+    register(e&&e.treasure_id,e&&e.created_at,'validated');
   });
   (filteredScans||[]).forEach(function(s){
-    register(s&&s.treasure_id,s&&s.created_at);
+    register(s&&s.treasure_id,s&&s.created_at,'attempt');
   });
   return {
-    scanCountById:fixedByIdScanCount,
+    validatedCountById:fixedByIdValidatedCount,
+    attemptCountById:fixedByIdAttemptCount,
     dayCountById:fixedByIdDayCount,
     weekCountById:fixedByIdWeekCount,
     lastDateById:fixedByIdLastDate,
@@ -2432,7 +2436,8 @@ async function loadStats(){
   var fixedStatsTable='';
   if(filteredTreasures.length){
     var fixedScanStats=_statsComputeFixedScanStats(filteredTreasures,fixedEventsForTable,fixedScansForTable);
-    var fixedByIdScanCount=fixedScanStats.scanCountById||{};
+    var fixedByIdValidatedCount=fixedScanStats.validatedCountById||{};
+    var fixedByIdAttemptCount=fixedScanStats.attemptCountById||{};
     var fixedByIdDayCount=fixedScanStats.dayCountById||{};
     var fixedByIdWeekCount=fixedScanStats.weekCountById||{};
     var fixedByIdLastDate=fixedScanStats.lastDateById||{};
@@ -2444,7 +2449,8 @@ async function loadStats(){
         id:tid,
         label:String(t.label||tid).substring(0,40),
         found:_statsIsTreasureFound(t),
-        scans:Number(fixedByIdScanCount[tid]||0),
+        validated:Number(fixedByIdValidatedCount[tid]||0),
+        attempts:Number(fixedByIdAttemptCount[tid]||0),
         scansDay:Number(fixedByIdDayCount[tid]||0),
         scansWeek:Number(fixedByIdWeekCount[tid]||0),
         lastDate:fixedByIdLastDate[tid]||'—',
@@ -2454,14 +2460,14 @@ async function loadStats(){
     var fixedTotalCount=fixedRowsRaw.length;
     var fixedFoundCount=fixedRowsRaw.filter(function(r){return r.found;}).length;
     var fixedNotFoundCount=Math.max(0,fixedTotalCount-fixedFoundCount);
-    var fixedNeverScanned=fixedRowsRaw.filter(function(r){return r.scans===0;}).length;
-    var fixedScannedNotFound=fixedRowsRaw.filter(function(r){return !r.found&&r.scans>0;}).length;
-    var fixedFoundNoScan=fixedRowsRaw.filter(function(r){return r.found&&r.scans===0;}).length;
-    var maxFixedScans=fixedRowsRaw.reduce(function(m,r){return r.scans>m?r.scans:m;},0);
-    var hotspotRows=fixedRowsRaw.slice().sort(function(a,b){return b.scans-a.scans||a.id.localeCompare(b.id,'fr',{sensitivity:'base'});}).slice(0,5);
+    var fixedNeverScanned=fixedRowsRaw.filter(function(r){return r.attempts===0;}).length;
+    var fixedScannedNotFound=fixedRowsRaw.filter(function(r){return !r.found&&r.attempts>0;}).length;
+    var fixedFoundNoScan=fixedRowsRaw.filter(function(r){return r.found&&r.attempts===0;}).length;
+    var maxFixedScans=fixedRowsRaw.reduce(function(m,r){return r.validated>m?r.validated:m;},0);
+    var hotspotRows=fixedRowsRaw.slice().sort(function(a,b){return b.validated-a.validated||a.id.localeCompare(b.id,'fr',{sensitivity:'base'});}).slice(0,5);
     var attentionRows=fixedRowsRaw.filter(function(r){return !r.found;}).sort(function(a,b){
-      if((b.scans>0)!==(a.scans>0))return (b.scans>0)?1:-1;
-      if(b.scans!==a.scans)return b.scans-a.scans;
+      if((b.attempts>0)!==(a.attempts>0))return (b.attempts>0)?1:-1;
+      if(b.attempts!==a.attempts)return b.attempts-a.attempts;
       return a.id.localeCompare(b.id,'fr',{sensitivity:'base'});
     }).slice(0,5);
     function fixedMiniBar(v){
@@ -2479,16 +2485,16 @@ async function loadStats(){
         +'<div style="padding:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">'
           +'<div style="background:#0f172a;border:1px solid #1e3a5f;border-radius:10px;padding:9px"><div style="font-size:0.66rem;color:#93c5fd">Couverture FIX</div><div style="font-size:1.02rem;color:#e2e8f0;font-weight:800">'+_statsFmtPctNum(_statsPctNum(fixedFoundCount,fixedTotalCount))+'</div><div style="font-size:0.72rem;color:#64748b">'+fixedFoundCount+' / '+fixedTotalCount+'</div></div>'
           +'<div style="background:#0f172a;border:1px solid #1e3a5f;border-radius:10px;padding:9px"><div style="font-size:0.66rem;color:#93c5fd">FIX non trouvées</div><div style="font-size:1.02rem;color:#fca5a5;font-weight:800">'+fixedNotFoundCount+'</div><div style="font-size:0.72rem;color:#64748b">reste à capturer</div></div>'
-          +'<div style="background:#0f172a;border:1px solid #1e3a5f;border-radius:10px;padding:9px"><div style="font-size:0.66rem;color:#93c5fd">Jamais scannées</div><div style="font-size:1.02rem;color:#fde68a;font-weight:800">'+fixedNeverScanned+'</div><div style="font-size:0.72rem;color:#64748b">peut indiquer visibilité faible</div></div>'
-          +'<div style="background:#0f172a;border:1px solid #1e3a5f;border-radius:10px;padding:9px"><div style="font-size:0.66rem;color:#93c5fd">Scannées mais non trouvées</div><div style="font-size:1.02rem;color:#fbbf24;font-weight:800">'+fixedScannedNotFound+'</div><div style="font-size:0.72rem;color:#64748b">à vérifier sur place</div></div>'
-          +'<div style="background:#0f172a;border:1px solid #1e3a5f;border-radius:10px;padding:9px"><div style="font-size:0.66rem;color:#93c5fd">Trouvées sans scan</div><div style="font-size:1.02rem;color:#c4b5fd;font-weight:800">'+fixedFoundNoScan+'</div><div style="font-size:0.72rem;color:#64748b">incohérence data potentielle</div></div>'
+          +'<div style="background:#0f172a;border:1px solid #1e3a5f;border-radius:10px;padding:9px"><div style="font-size:0.66rem;color:#93c5fd">Sans tentative QR</div><div style="font-size:1.02rem;color:#fde68a;font-weight:800">'+fixedNeverScanned+'</div><div style="font-size:0.72rem;color:#64748b">aucun log scan_attempts</div></div>'
+          +'<div style="background:#0f172a;border:1px solid #1e3a5f;border-radius:10px;padding:9px"><div style="font-size:0.66rem;color:#93c5fd">Tentées mais non trouvées</div><div style="font-size:1.02rem;color:#fbbf24;font-weight:800">'+fixedScannedNotFound+'</div><div style="font-size:0.72rem;color:#64748b">à vérifier sur place</div></div>'
+          +'<div style="background:#0f172a;border:1px solid #1e3a5f;border-radius:10px;padding:9px"><div style="font-size:0.66rem;color:#93c5fd">Trouvées sans tentative</div><div style="font-size:1.02rem;color:#c4b5fd;font-weight:800">'+fixedFoundNoScan+'</div><div style="font-size:0.72rem;color:#64748b">incohérence data potentielle</div></div>'
         +'</div>'
         +'<div style="padding:0 10px 10px;display:grid;grid-template-columns:1fr 1fr;gap:10px">'
           +'<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden">'
-            +'<div style="padding:8px 10px;background:#111827;font-size:0.72rem;color:#93c5fd;font-weight:700">Hotspots FIX (plus de scans)</div>'
+            +'<div style="padding:8px 10px;background:#111827;font-size:0.72rem;color:#93c5fd;font-weight:700">Hotspots FIX (captures validées)</div>'
             +'<div style="padding:8px 10px;display:flex;flex-direction:column;gap:7px">'
               +(hotspotRows.length?hotspotRows.map(function(r){
-                return '<div style="font-size:0.72rem;color:#cbd5e1"><div style="display:flex;justify-content:space-between;gap:8px"><span style="font-family:var(--mono)">'+escHtml(r.id)+'</span><strong style="color:#e2e8f0">'+r.scans+'</strong></div>'+fixedMiniBar(r.scans)+'</div>';
+                return '<div style="font-size:0.72rem;color:#cbd5e1"><div style="display:flex;justify-content:space-between;gap:8px"><span style="font-family:var(--mono)">'+escHtml(r.id)+'</span><strong style="color:#e2e8f0">'+r.validated+'</strong></div>'+fixedMiniBar(r.validated)+'</div>';
               }).join(''):'<div style="font-size:0.72rem;color:#64748b">Aucune donnée FIX.</div>')
             +'</div>'
           +'</div>'
@@ -2496,7 +2502,7 @@ async function loadStats(){
             +'<div style="padding:8px 10px;background:#111827;font-size:0.72rem;color:#fbbf24;font-weight:700">Priorités FIX (non trouvées)</div>'
             +'<div style="padding:8px 10px;display:flex;flex-direction:column;gap:7px">'
               +(attentionRows.length?attentionRows.map(function(r){
-                return '<div style="font-size:0.72rem;color:#cbd5e1;display:flex;justify-content:space-between;gap:8px"><span><span style="font-family:var(--mono)">'+escHtml(r.id)+'</span> <span style="color:#64748b">'+escHtml(r.label)+'</span></span><strong style="color:'+(r.scans>0?'#fbbf24':'#94a3b8')+'">'+r.scans+' scan'+(r.scans>1?'s':'')+'</strong></div>';
+                return '<div style="font-size:0.72rem;color:#cbd5e1;display:flex;justify-content:space-between;gap:8px"><span><span style="font-family:var(--mono)">'+escHtml(r.id)+'</span> <span style="color:#64748b">'+escHtml(r.label)+'</span></span><strong style="color:'+(r.attempts>0?'#fbbf24':'#94a3b8')+'">'+r.attempts+' tentative'+(r.attempts>1?'s':'')+'</strong></div>';
               }).join(''):'<div style="font-size:0.72rem;color:#64748b">Toutes les FIX semblent trouvées.</div>')
             +'</div>'
           +'</div>'
@@ -2505,15 +2511,16 @@ async function loadStats(){
     var fixedRows=fixedRowsRaw.map(function(r){
       var tid=r.id;
       var found=r.found;
-      var scanCount=r.scans;
+      var validatedCount=r.validated;
+      var attemptCount=r.attempts;
       var scanDay=r.scansDay;
       var scanWeek=r.scansWeek;
       var lastDate=r.lastDate;
       var label=r.label;
       var rawIdsTxt=r.rawIds.length?r.rawIds.join(', '):'—';
-      return '<tr><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#e2e8f0">'+escHtml(label)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;font-family:var(--mono);color:#94a3b8">'+escHtml(tid)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:'+(found?'#4ade80':'#ef4444')+'">'+scanCount+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:#93c5fd">'+scanWeek+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:#60a5fa">'+scanDay+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">'+escHtml(lastDate)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.7rem;font-family:var(--mono);color:#64748b">'+escHtml(rawIdsTxt)+'</td></tr>';
+      return '<tr><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#e2e8f0">'+escHtml(label)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;font-family:var(--mono);color:#94a3b8">'+escHtml(tid)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:'+(found?'#4ade80':'#ef4444')+'">'+validatedCount+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:#fbbf24">'+attemptCount+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:#93c5fd">'+scanWeek+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:#60a5fa">'+scanDay+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">'+escHtml(lastDate)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.7rem;font-family:var(--mono);color:#64748b">'+escHtml(rawIdsTxt)+'</td></tr>';
     }).join('');
-    fixedStatsTable='<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden;margin-bottom:10px"><div style="padding:8px 10px;background:#111827;font-size:0.74rem;color:#cbd5e1;font-weight:700">Balises fixes — Analyse par balise (temps réel opérationnel)</div><div style="padding:6px 10px;font-size:0.7rem;color:#93c5fd;background:#0b1220;border-bottom:1px solid #1e293b">Source: events + scan_attempts, toutes périodes (filtre quête appliqué). Colonne "IDs bruts vus" = valeurs réellement rencontrées et rattachées à la balise.</div><div style="max-height:320px;overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr style="position:sticky;top:0;background:#111827"><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Libellé</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">ID</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans total</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans semaine</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans jour</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Dernier scan</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">IDs bruts vus</th></tr></thead><tbody>'+fixedRows+'</tbody></table></div></div>';
+    fixedStatsTable='<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden;margin-bottom:10px"><div style="padding:8px 10px;background:#111827;font-size:0.74rem;color:#cbd5e1;font-weight:700">Balises fixes — Analyse par balise (temps réel opérationnel)</div><div style="padding:6px 10px;font-size:0.7rem;color:#93c5fd;background:#0b1220;border-bottom:1px solid #1e293b">Captures validées = events. Tentatives QR = scan_attempts (tous statuts). Elles sont volontairement séparées pour éviter le double comptage. Les colonnes 7j/jour portent sur les tentatives QR.</div><div style="max-height:320px;overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr style="position:sticky;top:0;background:#111827"><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Libellé</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">ID</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Captures validées</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Tentatives QR</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Tentatives 7j</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Tentatives jour</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Dernière activité</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">IDs bruts vus</th></tr></thead><tbody>'+fixedRows+'</tbody></table></div></div>';
   }
 
   var foundNotFoundTable='';
