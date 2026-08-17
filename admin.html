@@ -2489,7 +2489,11 @@ async function loadStats(){
           +'</div>'
         +'</div>'
       +'</div>';
-    var fixedRows=fixedRowsRaw.map(function(r){
+    var fixedRows=fixedRowsRaw.slice().sort(function(a,b){
+      if(b.scans!==a.scans)return b.scans-a.scans;
+      if((b.found?1:0)!==(a.found?1:0))return (a.found?1:0)-(b.found?1:0);
+      return a.id.localeCompare(b.id,'fr',{sensitivity:'base'});
+    }).map(function(r){
       var tid=r.id;
       var found=r.found;
       var scanCount=r.scans;
