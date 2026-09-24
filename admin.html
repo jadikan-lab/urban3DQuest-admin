@@ -1912,8 +1912,11 @@ function _statsResolveTreasureById(rawId,treasureById,treasureByIdUpper,fixedNor
 }
 function _statsComputeFixedScanStats(filteredTreasures,landingEntries){
   var fixedByIdLandingCount={};
+  var fixedByIdFirstDate={};
   var fixedByIdLastDate={};
   var fixedByIdLastTs={};
+  var fixedByIdFirstTs={};
+  var fixedByIdDayCounts={};
   var fixedByIdDayCount={};
   var fixedByIdWeekCount={};
   var fixedByIdRawIds={};
@@ -1927,8 +1930,11 @@ function _statsComputeFixedScanStats(filteredTreasures,landingEntries){
     if(!id)return;
     var norm=_statsNormalizeTreasureId(id);
     fixedByIdLandingCount[id]=0;
+    fixedByIdFirstDate[id]='—';
     fixedByIdLastDate[id]='—';
     fixedByIdLastTs[id]=0;
+    fixedByIdFirstTs[id]=0;
+    fixedByIdDayCounts[id]={};
     fixedByIdDayCount[id]=0;
     fixedByIdWeekCount[id]=0;
     fixedByIdRawIds[id]={};
@@ -1945,11 +1951,16 @@ function _statsComputeFixedScanStats(filteredTreasures,landingEntries){
     var at=String(createdAt||'');
     if(!at)return;
     var dayKey=_statsDayKey(at);
+    if(dayKey)fixedByIdDayCounts[realId][dayKey]=(fixedByIdDayCounts[realId][dayKey]||0)+1;
     if(dayKey&&todayKey&&dayKey===todayKey)fixedByIdDayCount[realId]+=1;
     var weekKey=_statsWeekStartKey(at);
     if(weekKey&&thisWeekKey&&weekKey===thisWeekKey)fixedByIdWeekCount[realId]+=1;
     var d=new Date(at);
     var ts=d.getTime();
+    if(isFinite(ts)&&(!fixedByIdFirstTs[realId]||ts<fixedByIdFirstTs[realId])){
+      fixedByIdFirstTs[realId]=ts;
+      fixedByIdFirstDate[realId]=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+    }
     if(isFinite(ts)&&ts>Number(fixedByIdLastTs[realId]||0)){
       fixedByIdLastTs[realId]=ts;
       fixedByIdLastDate[realId]=d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
@@ -1960,9 +1971,11 @@ function _statsComputeFixedScanStats(filteredTreasures,landingEntries){
   });
   return {
     landingCountById:fixedByIdLandingCount,
+    firstDateById:fixedByIdFirstDate,
     dayCountById:fixedByIdDayCount,
     weekCountById:fixedByIdWeekCount,
     lastDateById:fixedByIdLastDate,
+    dailyCountsById:fixedByIdDayCounts,
     rawIdsById:fixedByIdRawIds
   };
 }
@@ -2406,7 +2419,10 @@ async function loadStats(){
 
   // FIX table uses raw landing QR connections: every QR opening is a scan.
   // It intentionally ignores the date filter so this operational view remains all-time.
+  var fixedHistoryStart='2026-07-01T00:00:00';
   var fixedLandingForTable=(landing.available?(landing.entries||[]):[]).filter(function(entry){
+    var at=new Date(String((entry&&entry.created_at)||''));
+    if(!isFinite(at.getTime())||at<new Date(fixedHistoryStart))return false;
     var tid=String((entry&&entry.found)||'').trim();
     if(!tid)return false;
     var tt=_statsResolveTreasureById(tid,treasureById,treasureByIdUpper,fixedNormMap);
@@ -2417,12 +2433,16 @@ async function loadStats(){
 
   var fixedFocusPanel='';
   var fixedStatsTable='';
-  if(filteredTreasures.length){
+  if(!landing.available){
+    fixedFocusPanel='<div style="margin:0 0 10px;padding:12px;background:#271316;border:1px solid #7f1d1d;border-radius:10px;color:#fecaca;font-size:0.78rem"><strong>Historique FIX indisponible.</strong> La source landing ne répond pas: les scans FIX ne sont pas calculés ni affichés comme des zéros. Réessaie après le rétablissement du service.</div>';
+  }else if(filteredTreasures.length){
     var fixedScanStats=_statsComputeFixedScanStats(filteredTreasures,fixedLandingForTable);
     var fixedByIdLandingCount=fixedScanStats.landingCountById||{};
+    var fixedByIdFirstDate=fixedScanStats.firstDateById||{};
     var fixedByIdDayCount=fixedScanStats.dayCountById||{};
     var fixedByIdWeekCount=fixedScanStats.weekCountById||{};
     var fixedByIdLastDate=fixedScanStats.lastDateById||{};
+    var fixedByIdDailyCounts=fixedScanStats.dailyCountsById||{};
     var fixedByIdRawIds=fixedScanStats.rawIdsById||{};
     var fixedRowsRaw=filteredTreasures.filter(function(t){return t.type==='fixed';}).map(function(t){
       var tid=String(t.id||'').trim();
@@ -2432,9 +2452,11 @@ async function loadStats(){
         label:String(t.label||tid).substring(0,40),
         found:_statsIsTreasureFound(t),
         scans:Number(fixedByIdLandingCount[tid]||0),
+        firstDate:fixedByIdFirstDate[tid]||'—',
         scansDay:Number(fixedByIdDayCount[tid]||0),
         scansWeek:Number(fixedByIdWeekCount[tid]||0),
         lastDate:fixedByIdLastDate[tid]||'—',
+        dailyCounts:fixedByIdDailyCounts[tid]||{},
         rawIds:rawIdList
       };
     });
@@ -2499,12 +2521,15 @@ async function loadStats(){
       var scanCount=r.scans;
       var scanDay=r.scansDay;
       var scanWeek=r.scansWeek;
+      var firstDate=r.firstDate;
       var lastDate=r.lastDate;
       var label=r.label;
       var rawIdsTxt=r.rawIds.length?r.rawIds.join(', '):'—';
-      return '<tr><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#e2e8f0">'+escHtml(label)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;font-family:var(--mono);color:#94a3b8">'+escHtml(tid)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:'+(found?'#4ade80':'#ef4444')+'">'+scanCount+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:#93c5fd">'+scanWeek+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:#60a5fa">'+scanDay+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">'+escHtml(lastDate)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.7rem;font-family:var(--mono);color:#64748b">'+escHtml(rawIdsTxt)+'</td></tr>';
+      var dailyKeys=Object.keys(r.dailyCounts||{}).sort(function(a,b){return b.localeCompare(a);});
+      var dailyTxt=dailyKeys.map(function(k){return k+' · '+r.dailyCounts[k];}).join('<br>')||'—';
+      return '<tr><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#e2e8f0">'+escHtml(label)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;font-family:var(--mono);color:#94a3b8">'+escHtml(tid)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:'+(found?'#4ade80':'#ef4444')+'">'+scanCount+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;text-align:right;font-size:0.72rem;color:#cbd5e1">'+dailyKeys.length+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">'+escHtml(firstDate)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.72rem;color:#94a3b8">'+escHtml(lastDate)+'</td><td style="padding:7px 10px;border-top:1px solid #1f2937;font-size:0.7rem;color:#cbd5e1"><details><summary style="cursor:pointer;color:#93c5fd">'+dailyKeys.length+' jour'+(dailyKeys.length>1?'s':'')+'</summary><div style="padding-top:5px;white-space:nowrap">'+dailyTxt+'</div></details></td></tr>';
     }).join('');
-    fixedStatsTable='<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden;margin-bottom:10px"><div style="padding:8px 10px;background:#111827;font-size:0.74rem;color:#cbd5e1;font-weight:700">Balises fixes — Scans QR par balise</div><div style="padding:6px 10px;font-size:0.7rem;color:#93c5fd;background:#0b1220;border-bottom:1px solid #1e293b">Source unique: connexions landing. Chaque ligne avec un code FIX est comptée une fois, validation de jeu ou non. Toutes périodes, filtre quête appliqué.</div><div style="max-height:320px;overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr style="position:sticky;top:0;background:#111827"><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Libellé</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">ID</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans total</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans semaine</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans jour</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Dernier scan</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">IDs bruts vus</th></tr></thead><tbody>'+fixedRows+'</tbody></table></div></div>';
+    fixedStatsTable='<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;overflow:hidden;margin-bottom:10px"><div style="padding:8px 10px;background:#111827;font-size:0.74rem;color:#cbd5e1;font-weight:700">Historique FIX depuis le 01/07/2026</div><div style="padding:6px 10px;font-size:0.7rem;color:#93c5fd;background:#0b1220;border-bottom:1px solid #1e293b">Source unique: connexions landing historiques. Chaque ligne avec un code FIX compte pour un scan, validation de jeu ou non. Le détail par date reste visible pour contrôle.</div><div style="max-height:420px;overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr style="position:sticky;top:0;background:#111827"><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Libellé</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">ID</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Scans</th><th style="text-align:right;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Jours actifs</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Premier scan</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Dernier scan</th><th style="text-align:left;padding:7px 10px;font-size:0.7rem;color:#94a3b8">Détail par date</th></tr></thead><tbody>'+fixedRows+'</tbody></table></div></div>';
   }
 
   var foundNotFoundTable='';
